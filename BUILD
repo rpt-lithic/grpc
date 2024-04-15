@@ -424,7 +424,9 @@ GRPCXX_PUBLIC_HDRS = [
     "include/grpcpp/create_channel_posix.h",
     "include/grpcpp/ext/health_check_service_server_builder_option.h",
     "include/grpcpp/generic/async_generic_service.h",
+    "include/grpcpp/generic/callback_generic_service.h",
     "include/grpcpp/generic/generic_stub.h",
+    "include/grpcpp/generic/generic_stub_callback.h",
     "include/grpcpp/grpcpp.h",
     "include/grpcpp/health_check_service_interface.h",
     "include/grpcpp/impl/call_hook.h",
@@ -1240,6 +1242,7 @@ grpc_cc_library(
     visibility = ["@grpc:public"],
     deps = [
         "channel_arg_names",
+        "generic_stub_internal",
         "gpr",
         "grpc++_base_unsecure",
         "grpc++_codegen_proto",
@@ -2435,6 +2438,7 @@ grpc_cc_library(
         "channel_stack_builder",
         "config",
         "exec_ctx",
+        "generic_stub_internal",
         "gpr",
         "grpc",
         "grpc++_codegen_proto",
@@ -2519,6 +2523,7 @@ grpc_cc_library(
         "channel_stack_builder",
         "config",
         "exec_ctx",
+        "generic_stub_internal",
         "gpr",
         "grpc_base",
         "grpc_core_credentials_header",
@@ -2910,6 +2915,32 @@ grpc_cc_library(
     deps = [
         "//src/cpp/ext/otel:otel_plugin",
     ],
+)
+
+grpc_cc_library(
+    name = "generic_stub_internal",
+    hdrs = [
+        "include/grpcpp/impl/generic_stub_internal.h",
+    ],
+    language = "c++",
+)
+
+grpc_cc_library(
+    name = "generic_stub_callback",
+    hdrs = [
+        "include/grpcpp/generic/generic_stub_callback.h",
+    ],
+    language = "c++",
+    visibility = ["@grpc:public"],
+)
+
+grpc_cc_library(
+    name = "callback_generic_service",
+    hdrs = [
+        "include/grpcpp/generic/callback_generic_service.h",
+    ],
+    language = "c++",
+    visibility = ["@grpc:public"],
 )
 
 grpc_cc_library(
