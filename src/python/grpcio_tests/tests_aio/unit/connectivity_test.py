@@ -15,6 +15,7 @@
 
 import asyncio
 import logging
+import platform
 import threading
 import time
 import unittest
@@ -30,25 +31,32 @@ from tests_aio.unit._test_server import start_test_server
 
 
 class TestConnectivityState(AioTestBase):
-
     async def setUp(self):
         self._server_address, self._server = await start_test_server()
 
     async def tearDown(self):
         await self._server.stop(None)
 
+    @unittest.skipIf(
+        "aarch64" in platform.machine(),
+        "The transient failure propagation is slower on aarch64",
+    )
     async def test_unavailable_backend(self):
         async with aio.insecure_channel(UNREACHABLE_TARGET) as channel:
-            self.assertEqual(grpc.ChannelConnectivity.IDLE,
-                             channel.get_state(False))
-            self.assertEqual(grpc.ChannelConnectivity.IDLE,
-                             channel.get_state(True))
+            self.assertEqual(
+                grpc.ChannelConnectivity.IDLE, channel.get_state(False)
+            )
+            self.assertEqual(
+                grpc.ChannelConnectivity.IDLE, channel.get_state(True)
+            )
 
             # Should not time out
             await asyncio.wait_for(
                 _common.block_until_certain_state(
-                    channel, grpc.ChannelConnectivity.TRANSIENT_FAILURE),
-                test_constants.SHORT_TIMEOUT)
+                    channel, grpc.ChannelConnectivity.TRANSIENT_FAILURE
+                ),
+                test_constants.SHORT_TIMEOUT,
+            )
 
     async def test_normal_backend(self):
         async with aio.insecure_channel(self._server_address) as channel:
@@ -58,26 +66,32 @@ class TestConnectivityState(AioTestBase):
             # Should not time out
             await asyncio.wait_for(
                 _common.block_until_certain_state(
-                    channel, grpc.ChannelConnectivity.READY),
-                test_constants.SHORT_TIMEOUT)
+                    channel, grpc.ChannelConnectivity.READY
+                ),
+                test_constants.SHORT_TIMEOUT,
+            )
 
     async def test_timeout(self):
         async with aio.insecure_channel(self._server_address) as channel:
-            self.assertEqual(grpc.ChannelConnectivity.IDLE,
-                             channel.get_state(False))
+            self.assertEqual(
+                grpc.ChannelConnectivity.IDLE, channel.get_state(False)
+            )
 
             # If timed out, the function should return None.
             with self.assertRaises(asyncio.TimeoutError):
                 await asyncio.wait_for(
                     _common.block_until_certain_state(
-                        channel, grpc.ChannelConnectivity.READY),
-                    test_constants.SHORT_TIMEOUT)
+                        channel, grpc.ChannelConnectivity.READY
+                    ),
+                    test_constants.SHORT_TIMEOUT,
+                )
 
     async def test_shutdown(self):
         channel = aio.insecure_channel(self._server_address)
 
-        self.assertEqual(grpc.ChannelConnectivity.IDLE,
-                         channel.get_state(False))
+        self.assertEqual(
+            grpc.ChannelConnectivity.IDLE, channel.get_state(False)
+        )
 
         # Waiting for changes in a separate coroutine
         wait_started = asyncio.Event()
@@ -91,11 +105,13 @@ class TestConnectivityState(AioTestBase):
 
         await channel.close()
 
-        self.assertEqual(grpc.ChannelConnectivity.SHUTDOWN,
-                         channel.get_state(True))
+        self.assertEqual(
+            grpc.ChannelConnectivity.SHUTDOWN, channel.get_state(True)
+        )
 
-        self.assertEqual(grpc.ChannelConnectivity.SHUTDOWN,
-                         channel.get_state(False))
+        self.assertEqual(
+            grpc.ChannelConnectivity.SHUTDOWN, channel.get_state(False)
+        )
 
         # Make sure there isn't any exception in the task
         await pending_task
@@ -104,9 +120,10 @@ class TestConnectivityState(AioTestBase):
         # segfault or abort.
         with self.assertRaises(aio.UsageError):
             await channel.wait_for_state_change(
-                grpc.ChannelConnectivity.SHUTDOWN)
+                grpc.ChannelConnectivity.SHUTDOWN
+            )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     logging.basicConfig(level=logging.DEBUG)
     unittest.main(verbosity=2)

@@ -40,7 +40,7 @@ PROJECT_NAME           = "GRPC Objective-C"
 # could be handy for archiving the generated documentation or if some version
 # control system is used.
 
-PROJECT_NUMBER         = 1.30.2
+PROJECT_NUMBER         = 1.64.0-dev
 
 # Using the PROJECT_BRIEF tag one can provide an optional one line description
 # for a project that appears at the top of each page and should give viewer a
@@ -762,6 +762,7 @@ WARN_LOGFILE           =
 
 INPUT                  = doc/PROTOCOL-HTTP2.md \
 doc/PROTOCOL-WEB.md \
+doc/bazel_support.md \
 doc/binary-logging.md \
 doc/c-style-guide.md \
 doc/command_line_tool.md \
@@ -776,6 +777,7 @@ doc/fail_fast.md \
 doc/fork_support.md \
 doc/g_stands_for.md \
 doc/grpc_release_schedule.md \
+doc/grpc_xds_features.md \
 doc/health-checking.md \
 doc/http-grpc-status-mapping.md \
 doc/http2-interop-test-descriptions.md \
@@ -784,6 +786,7 @@ doc/interop-test-descriptions.md \
 doc/keepalive.md \
 doc/load-balancing.md \
 doc/naming.md \
+doc/qos-dscp.md \
 doc/security_audit.md \
 doc/server-reflection.md \
 doc/server_reflection_tutorial.md \

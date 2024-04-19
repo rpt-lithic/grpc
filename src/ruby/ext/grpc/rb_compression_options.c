@@ -18,20 +18,21 @@
 
 #include <ruby/ruby.h>
 
-#include "rb_byte_buffer.h"
 #include "rb_compression_options.h"
+
+#include <string.h>
+
+#include "rb_byte_buffer.h"
+#include "rb_grpc.h"
 #include "rb_grpc_imports.generated.h"
 
 #include <grpc/compression.h>
 #include <grpc/grpc.h>
 #include <grpc/impl/codegen/compression_types.h>
-#include <grpc/impl/codegen/grpc_types.h>
+#include <grpc/impl/grpc_types.h>
 #include <grpc/support/alloc.h>
 #include <grpc/support/log.h>
 #include <grpc/support/string_util.h>
-#include <string.h>
-
-#include "rb_grpc.h"
 
 static VALUE grpc_rb_cCompressionOptions = Qnil;
 
@@ -69,7 +70,6 @@ static void grpc_rb_compression_options_free_internal(void* p) {
  * wrapped grpc compression options. */
 static void grpc_rb_compression_options_free(void* p) {
   grpc_rb_compression_options_free_internal(p);
-  grpc_ruby_shutdown();
 }
 
 /* Ruby recognized data type for the CompressionOptions class. */
@@ -142,7 +142,7 @@ grpc_compression_level grpc_rb_compression_options_level_name_to_value_internal(
            "Unrecognized compression level name."
            "Valid compression level names are none, low, medium, and high.");
 
-  /* Dummy return statement. */
+  /* Phony return statement. */
   return GRPC_COMPRESS_LEVEL_NONE;
 }
 

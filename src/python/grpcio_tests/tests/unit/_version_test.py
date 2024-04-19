@@ -13,18 +13,18 @@
 # limitations under the License.
 """Test for grpc.__version__"""
 
-import unittest
-import grpc
 import logging
+import unittest
+
+import grpc
 from grpc import _grpcio_metadata
 
 
 class VersionTest(unittest.TestCase):
-
     def test_get_version(self):
         self.assertEqual(grpc.__version__, _grpcio_metadata.__version__)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     logging.basicConfig()
     unittest.main(verbosity=2)

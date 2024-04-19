@@ -77,26 +77,12 @@ function venv_relative_python() {
   fi
 }
 
-# Distutils toolchain to use depending on the system.
+# Toolchain to use depending on the system.
 function toolchain() {
   if [ "$(is_mingw)" ]; then
     echo 'mingw32'
   else
     echo 'unix'
-  fi
-}
-
-# TODO(jtattermusch): this adds dependency on grealpath on mac
-# (brew install coreutils) for little reason.
-# Command to invoke the linux command `realpath` or equivalent.
-function script_realpath() {
-  # Find `realpath`
-  if [ -x "$(command -v realpath)" ]; then
-    realpath "$@"
-  elif [ -x "$(command -v grealpath)" ]; then
-    grealpath "$@"
-  else
-    exit 1
   fi
 }
 
@@ -116,7 +102,7 @@ if [ "$(is_msys)" ]; then
 fi
 
 ROOT=$(pwd)
-export CFLAGS="-I$ROOT/include -std=gnu99 -fno-wrapv $CFLAGS"
+export CFLAGS="-I$ROOT/include -fno-wrapv $CFLAGS"
 export GRPC_PYTHON_BUILD_WITH_CYTHON=1
 export LANG=en_US.UTF-8
 
@@ -125,17 +111,9 @@ export LANG=en_US.UTF-8
 DEFAULT_PARALLEL_JOBS=$(nproc) || DEFAULT_PARALLEL_JOBS=4
 export GRPC_PYTHON_BUILD_EXT_COMPILER_JOBS=${GRPC_PYTHON_BUILD_EXT_COMPILER_JOBS:-$DEFAULT_PARALLEL_JOBS}
 
-# If ccache is available on Linux, use it.
-if [ "$(is_linux)" ]; then
-  # We're not on Darwin (Mac OS X)
-  if [ -x "$(command -v ccache)" ]; then
-    if [ -x "$(command -v gcc)" ]; then
-      export CC='ccache gcc'
-    elif [ -x "$(command -v clang)" ]; then
-      export CC='ccache clang'
-    fi
-  fi
-fi
+# activate ccache if desired
+# shellcheck disable=SC1091
+source tools/internal_ci/helper_scripts/prepare_ccache_symlinks_rc
 
 ############################
 # Perform build operations #
@@ -145,15 +123,20 @@ if [[ "$(inside_venv)" ]]; then
   VENV_PYTHON="$PYTHON"
 else
   # Instantiate the virtualenv from the Python version passed in.
-  $PYTHON -m pip install --user virtualenv==16.7.9
-  $PYTHON -m virtualenv "$VENV"
-  VENV_PYTHON=$(script_realpath "$VENV/$VENV_RELATIVE_PYTHON")
+  $PYTHON -m pip install --user virtualenv==20.25.0
+  # Skip wheel and setuptools and manually install later. Otherwise we might
+  # not find cython module while building grpcio.
+  $PYTHON -m virtualenv --no-wheel --no-setuptools "$VENV"
+  VENV_PYTHON="$(pwd)/$VENV/$VENV_RELATIVE_PYTHON"
 fi
 
-# See https://github.com/grpc/grpc/issues/14815 for more context. We cannot rely
-# on pip to upgrade itself because if pip is too old, it may not have the required
-# TLS version to run `pip install`.
-curl https://bootstrap.pypa.io/get-pip.py | $VENV_PYTHON
+pip_install() {
+  $VENV_PYTHON -m pip install "$@"
+}
+
+pip_install --upgrade pip
+pip_install --upgrade wheel
+pip_install --upgrade setuptools==66.1.0
 
 # pip-installs the directory specified. Used because on MSYS the vanilla Windows
 # Python gets confused when parsing paths.
@@ -165,39 +148,37 @@ pip_install_dir() {
   cd "$PWD"
 }
 
-# On library/version/platforms combo that do not have a binary
-# published, we may end up building a dependency from source. In that
-# case, several of our build environment variables may disrupt the
-# third-party build process. This function pipes through only the
-# minimal environment necessary.
-pip_install() {
-  /usr/bin/env -i PATH="$PATH" "$VENV_PYTHON" -m pip install "$@"
+pip_install_dir_and_deps() {
+  PWD=$(pwd)
+  cd "$1"
+  ($VENV_PYTHON setup.py build_ext -c "$TOOLCHAIN" || true)
+  $VENV_PYTHON -m pip install .
+  cd "$PWD"
 }
 
-case "$VENV" in
-  *py36_gevent*)
-  # TODO(https://github.com/grpc/grpc/issues/15411) unpin this
-  pip_install gevent==1.3.b1
-  ;;
-  *gevent*)
-  pip_install -U gevent
-  ;;
-esac
+pip_install -U gevent
 
-pip_install --upgrade pip==19.3.1
-pip_install --upgrade setuptools
-pip_install --upgrade cython
-pip_install --upgrade six enum34 protobuf
+pip_install --upgrade 'cython<3.0.0rc1'
+pip_install --upgrade six 'protobuf>=4.21.3rc1,!=4.22.0.*'
 
 if [ "$("$VENV_PYTHON" -c "import sys; print(sys.version_info[0])")" == "2" ]
 then
-  pip_install futures
+  pip_install --upgrade futures enum34
 fi
 
 pip_install_dir "$ROOT"
 
 $VENV_PYTHON "$ROOT/tools/distrib/python/make_grpcio_tools.py"
-pip_install_dir "$ROOT/tools/distrib/python/grpcio_tools"
+pip_install_dir_and_deps "$ROOT/tools/distrib/python/grpcio_tools"
+
+# Build/install Observability
+# Observability does not support Windows and MacOS.
+if [ "$(is_mingw)" ] || [ "$(is_darwin)" ]; then
+  echo "Skip building grpcio_observability for Windows or MacOS"
+else
+  $VENV_PYTHON "$ROOT/src/python/grpcio_observability/make_grpcio_observability.py"
+  pip_install_dir_and_deps "$ROOT/src/python/grpcio_observability"
+fi
 
 # Build/install Channelz
 $VENV_PYTHON "$ROOT/src/python/grpcio_channelz/setup.py" preprocess
@@ -219,13 +200,25 @@ $VENV_PYTHON "$ROOT/src/python/grpcio_status/setup.py" preprocess
 $VENV_PYTHON "$ROOT/src/python/grpcio_status/setup.py" build_package_protos
 pip_install_dir "$ROOT/src/python/grpcio_status"
 
+
+# Build/install status proto mapping
+# build.py is invoked as part of generate_projects.sh
+pip_install_dir "$ROOT/tools/distrib/python/xds_protos"
+
+# Build/install csds
+pip_install_dir "$ROOT/src/python/grpcio_csds"
+
+# Build/install admin
+pip_install_dir "$ROOT/src/python/grpcio_admin"
+
 # Install testing
 pip_install_dir "$ROOT/src/python/grpcio_testing"
 
 # Build/install tests
-pip_install coverage==4.4 oauth2client==4.1.0 \
-            google-auth>=1.17.2 requests==2.14.2 \
-            googleapis-common-protos>=1.5.5 rsa==4.0
+pip_install coverage==7.2.0 oauth2client==4.1.0 \
+            google-auth>=1.35.0 requests==2.31.0 \
+            googleapis-common-protos>=1.5.5 rsa==4.0 absl-py==1.4.0 \
+            opentelemetry-sdk==1.21.0
 $VENV_PYTHON "$ROOT/src/python/grpcio_tests/setup.py" preprocess
 $VENV_PYTHON "$ROOT/src/python/grpcio_tests/setup.py" build_package_protos
 pip_install_dir "$ROOT/src/python/grpcio_tests"

@@ -1,39 +1,46 @@
-/*
- *
- * Copyright 2018 gRPC authors.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- *
- */
+//
+//
+// Copyright 2018 gRPC authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+//
+
+#ifndef GRPC_TEST_CPP_END2END_INTERCEPTORS_UTIL_H
+#define GRPC_TEST_CPP_END2END_INTERCEPTORS_UTIL_H
 
 #include <condition_variable>
 
+#include <gtest/gtest.h>
+
+#include "absl/log/check.h"
+#include "absl/strings/str_format.h"
+
 #include <grpcpp/channel.h>
 
+#include "src/core/lib/gprpp/crash.h"
 #include "src/proto/grpc/testing/echo.grpc.pb.h"
 #include "test/cpp/util/string_ref_helper.h"
 
-#include <gtest/gtest.h>
-
 namespace grpc {
 namespace testing {
-/* This interceptor does nothing. Just keeps a global count on the number of
- * times it was invoked. */
-class DummyInterceptor : public experimental::Interceptor {
+// This interceptor does nothing. Just keeps a global count on the number of
+// times it was invoked.
+class PhonyInterceptor : public experimental::Interceptor {
  public:
-  DummyInterceptor() {}
+  PhonyInterceptor() {}
 
-  virtual void Intercept(experimental::InterceptorBatchMethods* methods) {
+  void Intercept(experimental::InterceptorBatchMethods* methods) override {
     if (methods->QueryInterceptionHookPoint(
             experimental::InterceptionHookPoints::PRE_SEND_INITIAL_METADATA)) {
       num_times_run_++;
@@ -67,32 +74,68 @@ class DummyInterceptor : public experimental::Interceptor {
   static std::atomic<int> num_times_cancel_;
 };
 
-class DummyInterceptorFactory
+class PhonyInterceptorFactory
     : public experimental::ClientInterceptorFactoryInterface,
       public experimental::ServerInterceptorFactoryInterface {
  public:
-  virtual experimental::Interceptor* CreateClientInterceptor(
+  experimental::Interceptor* CreateClientInterceptor(
       experimental::ClientRpcInfo* /*info*/) override {
-    return new DummyInterceptor();
+    return new PhonyInterceptor();
   }
 
-  virtual experimental::Interceptor* CreateServerInterceptor(
+  experimental::Interceptor* CreateServerInterceptor(
       experimental::ServerRpcInfo* /*info*/) override {
-    return new DummyInterceptor();
+    return new PhonyInterceptor();
   }
 };
 
-/* This interceptor factory returns nullptr on interceptor creation */
+// This interceptor can be used to test the interception mechanism.
+class TestInterceptor : public experimental::Interceptor {
+ public:
+  TestInterceptor(const std::string& method, const char* suffix_for_stats,
+                  experimental::ClientRpcInfo* info) {
+    EXPECT_EQ(info->method(), method);
+
+    if (suffix_for_stats == nullptr || info->suffix_for_stats() == nullptr) {
+      EXPECT_EQ(info->suffix_for_stats(), suffix_for_stats);
+    } else {
+      EXPECT_EQ(strcmp(info->suffix_for_stats(), suffix_for_stats), 0);
+    }
+  }
+
+  void Intercept(experimental::InterceptorBatchMethods* methods) override {
+    methods->Proceed();
+  }
+};
+
+class TestInterceptorFactory
+    : public experimental::ClientInterceptorFactoryInterface {
+ public:
+  TestInterceptorFactory(const std::string& method,
+                         const char* suffix_for_stats)
+      : method_(method), suffix_for_stats_(suffix_for_stats) {}
+
+  experimental::Interceptor* CreateClientInterceptor(
+      experimental::ClientRpcInfo* info) override {
+    return new TestInterceptor(method_, suffix_for_stats_, info);
+  }
+
+ private:
+  std::string method_;
+  const char* suffix_for_stats_;
+};
+
+// This interceptor factory returns nullptr on interceptor creation
 class NullInterceptorFactory
     : public experimental::ClientInterceptorFactoryInterface,
       public experimental::ServerInterceptorFactoryInterface {
  public:
-  virtual experimental::Interceptor* CreateClientInterceptor(
+  experimental::Interceptor* CreateClientInterceptor(
       experimental::ClientRpcInfo* /*info*/) override {
     return nullptr;
   }
 
-  virtual experimental::Interceptor* CreateServerInterceptor(
+  experimental::Interceptor* CreateServerInterceptor(
       experimental::ServerRpcInfo* /*info*/) override {
     return nullptr;
   }
@@ -138,7 +181,7 @@ class EchoTestServiceStreamingImpl : public EchoTestService::Service {
     }
 
     EchoRequest req;
-    string response_str = "";
+    string response_str;
     while (reader->Read(&req)) {
       response_str += req.message();
     }
@@ -164,7 +207,8 @@ class EchoTestServiceStreamingImpl : public EchoTestService::Service {
 
 constexpr int kNumStreamingMessages = 10;
 
-void MakeCall(const std::shared_ptr<Channel>& channel);
+void MakeCall(const std::shared_ptr<Channel>& channel,
+              const StubOptions& options = StubOptions());
 
 void MakeClientStreamingCall(const std::shared_ptr<Channel>& channel);
 
@@ -185,13 +229,13 @@ void MakeCallbackCall(const std::shared_ptr<Channel>& channel);
 bool CheckMetadata(const std::multimap<grpc::string_ref, grpc::string_ref>& map,
                    const string& key, const string& value);
 
-bool CheckMetadata(const std::multimap<grpc::string, grpc::string>& map,
+bool CheckMetadata(const std::multimap<std::string, std::string>& map,
                    const string& key, const string& value);
 
 std::vector<std::unique_ptr<experimental::ClientInterceptorFactoryInterface>>
-CreateDummyClientInterceptors();
+CreatePhonyClientInterceptors();
 
-inline void* tag(int i) { return (void*)static_cast<intptr_t>(i); }
+inline void* tag(int i) { return reinterpret_cast<void*>(i); }
 inline int detag(void* p) {
   return static_cast<int>(reinterpret_cast<intptr_t>(p));
 }
@@ -250,7 +294,7 @@ class Verifier {
   // This version of Verify allows optionally ignoring the
   // outcome of the expectation
   void Verify(CompletionQueue* cq, bool ignore_ok) {
-    GPR_ASSERT(!expectations_.empty() || !maybe_expectations_.empty());
+    CHECK(!expectations_.empty() || !maybe_expectations_.empty());
     while (!expectations_.empty()) {
       Next(cq, ignore_ok);
     }
@@ -297,8 +341,7 @@ class Verifier {
           EXPECT_EQ(it2->second.ok, ok);
         }
       } else {
-        gpr_log(GPR_ERROR, "Unexpected tag: %p", got_tag);
-        abort();
+        grpc_core::Crash(absl::StrFormat("Unexpected tag: %p", got_tag));
       }
     }
   }
@@ -315,3 +358,5 @@ class Verifier {
 
 }  // namespace testing
 }  // namespace grpc
+
+#endif  // GRPC_TEST_CPP_END2END_INTERCEPTORS_UTIL_H

@@ -16,16 +16,17 @@
 import collections
 import sys
 
+from google.rpc import status_pb2
 import grpc
 
-from google.rpc import status_pb2
-from ._common import code_to_grpc_status_code, GRPC_DETAILS_METADATA_KEY
+from ._common import GRPC_DETAILS_METADATA_KEY
+from ._common import code_to_grpc_status_code
 
 
 class _Status(
-        collections.namedtuple('_Status',
-                               ('code', 'details', 'trailing_metadata')),
-        grpc.Status):
+    collections.namedtuple("_Status", ("code", "details", "trailing_metadata")),
+    grpc.Status,
+):
     pass
 
 
@@ -51,12 +52,14 @@ def from_call(call):
             rich_status = status_pb2.Status.FromString(value)
             if call.code().value[0] != rich_status.code:
                 raise ValueError(
-                    'Code in Status proto (%s) doesn\'t match status code (%s)'
-                    % (code_to_grpc_status_code(rich_status.code), call.code()))
+                    "Code in Status proto (%s) doesn't match status code (%s)"
+                    % (code_to_grpc_status_code(rich_status.code), call.code())
+                )
             if call.details() != rich_status.message:
                 raise ValueError(
-                    'Message in Status proto (%s) doesn\'t match status details (%s)'
-                    % (rich_status.message, call.details()))
+                    "Message in Status proto (%s) doesn't match status details"
+                    " (%s)" % (rich_status.message, call.details())
+                )
             return rich_status
     return None
 
@@ -73,17 +76,21 @@ def to_status(status):
     Returns:
       A grpc.Status instance representing the input google.rpc.status.Status message.
     """
-    return _Status(code=code_to_grpc_status_code(status.code),
-                   details=status.message,
-                   trailing_metadata=((GRPC_DETAILS_METADATA_KEY,
-                                       status.SerializeToString()),))
+    return _Status(
+        code=code_to_grpc_status_code(status.code),
+        details=status.message,
+        trailing_metadata=(
+            (GRPC_DETAILS_METADATA_KEY, status.SerializeToString()),
+        ),
+    )
 
 
 __all__ = [
-    'from_call',
-    'to_status',
+    "from_call",
+    "to_status",
 ]
 
 if sys.version_info[0] >= 3 and sys.version_info[1] >= 6:
     from . import _async as aio  # pylint: disable=unused-import
-    __all__.append('aio')
+
+    __all__.append("aio")

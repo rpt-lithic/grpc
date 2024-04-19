@@ -1,29 +1,33 @@
-/*
- *
- * Copyright 2019 gRPC authors.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- *
- */
+//
+//
+// Copyright 2019 gRPC authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+//
+
+#include <gtest/gtest.h>
+
+#include "upb/mem/arena.hpp"
 
 #include <grpcpp/security/alts_context.h>
 #include <grpcpp/security/alts_util.h>
 #include <grpcpp/security/auth_context.h>
-#include <gtest/gtest.h>
 
 #include "src/core/tsi/alts/handshaker/alts_tsi_handshaker.h"
 #include "src/cpp/common/secure_auth_context.h"
 #include "src/proto/grpc/gcp/altscontext.upb.h"
+#include "test/core/util/test_config.h"
 #include "test/cpp/util/string_ref_helper.h"
 
 namespace grpc {
@@ -77,23 +81,35 @@ TEST(AltsUtilTest, AuthContextWithGoodAltsContextWithoutRpcVersions) {
   const std::shared_ptr<AuthContext> auth_context(
       new SecureAuthContext(ctx.get()));
   ctx.reset();
-  grpc::string expected_ap("application protocol");
-  grpc::string expected_rp("record protocol");
-  grpc::string expected_peer("peer");
-  grpc::string expected_local("local");
+  std::string expected_ap("application protocol");
+  std::string expected_rp("record protocol");
+  std::string expected_peer("peer");
+  std::string expected_local("local");
+  std::string expected_peer_atrributes_key("peer");
+  std::string expected_peer_atrributes_value("attributes");
   grpc_security_level expected_sl = GRPC_INTEGRITY_ONLY;
   upb::Arena context_arena;
   grpc_gcp_AltsContext* context = grpc_gcp_AltsContext_new(context_arena.ptr());
   grpc_gcp_AltsContext_set_application_protocol(
-      context, upb_strview_make(expected_ap.data(), expected_ap.length()));
+      context,
+      upb_StringView_FromDataAndSize(expected_ap.data(), expected_ap.length()));
   grpc_gcp_AltsContext_set_record_protocol(
-      context, upb_strview_make(expected_rp.data(), expected_rp.length()));
+      context,
+      upb_StringView_FromDataAndSize(expected_rp.data(), expected_rp.length()));
   grpc_gcp_AltsContext_set_security_level(context, expected_sl);
   grpc_gcp_AltsContext_set_peer_service_account(
-      context, upb_strview_make(expected_peer.data(), expected_peer.length()));
+      context, upb_StringView_FromDataAndSize(expected_peer.data(),
+                                              expected_peer.length()));
   grpc_gcp_AltsContext_set_local_service_account(
+      context, upb_StringView_FromDataAndSize(expected_local.data(),
+                                              expected_local.length()));
+  grpc_gcp_AltsContext_peer_attributes_set(
       context,
-      upb_strview_make(expected_local.data(), expected_local.length()));
+      upb_StringView_FromDataAndSize(expected_peer_atrributes_key.data(),
+                                     expected_peer_atrributes_key.length()),
+      upb_StringView_FromDataAndSize(expected_peer_atrributes_value.data(),
+                                     expected_peer_atrributes_value.length()),
+      context_arena.ptr());
   size_t serialized_ctx_length;
   char* serialized_ctx = grpc_gcp_AltsContext_serialize(
       context, context_arena.ptr(), &serialized_ctx_length);
@@ -115,6 +131,8 @@ TEST(AltsUtilTest, AuthContextWithGoodAltsContextWithoutRpcVersions) {
   EXPECT_EQ(0, rpc_protocol_versions.max_rpc_version.minor_version);
   EXPECT_EQ(0, rpc_protocol_versions.min_rpc_version.major_version);
   EXPECT_EQ(0, rpc_protocol_versions.min_rpc_version.minor_version);
+  EXPECT_EQ(expected_peer_atrributes_value,
+            alts_context->peer_attributes().at(expected_peer_atrributes_key));
 }
 
 TEST(AltsUtilTest, AuthContextWithGoodAltsContext) {
@@ -172,14 +190,14 @@ TEST(AltsUtilTest, AltsClientAuthzCheck) {
   const std::shared_ptr<AuthContext> auth_context(
       new SecureAuthContext(ctx.get()));
   ctx.reset();
-  grpc::string peer("good_client");
+  std::string peer("good_client");
   std::vector<std::string> good_service_accounts{"good_client",
                                                  "good_client_1"};
   std::vector<std::string> bad_service_accounts{"bad_client", "bad_client_1"};
   upb::Arena context_arena;
   grpc_gcp_AltsContext* context = grpc_gcp_AltsContext_new(context_arena.ptr());
   grpc_gcp_AltsContext_set_peer_service_account(
-      context, upb_strview_make(peer.data(), peer.length()));
+      context, upb_StringView_FromDataAndSize(peer.data(), peer.length()));
   size_t serialized_ctx_length;
   char* serialized_ctx = grpc_gcp_AltsContext_serialize(
       context, context_arena.ptr(), &serialized_ctx_length);
@@ -198,6 +216,7 @@ TEST(AltsUtilTest, AltsClientAuthzCheck) {
 }  // namespace grpc
 
 int main(int argc, char** argv) {
+  grpc::testing::TestEnvironment env(&argc, argv);
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
 }

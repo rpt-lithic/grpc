@@ -41,6 +41,7 @@ include "_cygrpc/arguments.pyx.pxi"
 include "_cygrpc/call.pyx.pxi"
 include "_cygrpc/channel.pyx.pxi"
 include "_cygrpc/channelz.pyx.pxi"
+include "_cygrpc/csds.pyx.pxi"
 include "_cygrpc/credentials.pyx.pxi"
 include "_cygrpc/completion_queue.pyx.pxi"
 include "_cygrpc/event.pyx.pxi"
@@ -54,10 +55,11 @@ include "_cygrpc/tag.pyx.pxi"
 include "_cygrpc/time.pyx.pxi"
 include "_cygrpc/vtable.pyx.pxi"
 include "_cygrpc/_hooks.pyx.pxi"
-
-include "_cygrpc/iomgr.pyx.pxi"
+include "_cygrpc/observability.pyx.pxi"
 
 include "_cygrpc/grpc_gevent.pyx.pxi"
+
+include "_cygrpc/thread.pyx.pxi"
 
 IF UNAME_SYSNAME == "Windows":
     include "_cygrpc/fork_windows.pyx.pxi"
@@ -65,10 +67,6 @@ ELSE:
     include "_cygrpc/fork_posix.pyx.pxi"
 
 # Following pxi files are part of the Aio module
-include "_cygrpc/aio/iomgr/iomgr.pyx.pxi"
-include "_cygrpc/aio/iomgr/socket.pyx.pxi"
-include "_cygrpc/aio/iomgr/timer.pyx.pxi"
-include "_cygrpc/aio/iomgr/resolver.pyx.pxi"
 include "_cygrpc/aio/common.pyx.pxi"
 include "_cygrpc/aio/rpc_status.pyx.pxi"
 include "_cygrpc/aio/completion_queue.pyx.pxi"
@@ -82,14 +80,7 @@ include "_cygrpc/aio/server.pyx.pxi"
 #
 # initialize gRPC
 #
-cdef extern from "Python.h":
-
-  int PyEval_InitThreads()
-
 cdef _initialize():
-  # We have Python callbacks called by c-core threads, this ensures the GIL
-  # is initialized.
-  PyEval_InitThreads()
   grpc_set_ssl_roots_override_callback(
           <grpc_ssl_roots_override_callback>ssl_roots_override_callback)
 

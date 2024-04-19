@@ -17,17 +17,19 @@ The example would only successfully run in GCP environment."""
 
 import grpc
 
+from client import bidirectional_streaming_method
+from client import client_streaming_method
+from client import server_streaming_method
+from client import simple_method
 import demo_pb2_grpc
-from client import (bidirectional_streaming_method, client_streaming_method,
-                    server_streaming_method, simple_method)
 
 SERVER_ADDRESS = "localhost:23333"
 
 
 def main():
     with grpc.secure_channel(
-            SERVER_ADDRESS,
-            credentials=grpc.alts_channel_credentials()) as channel:
+        SERVER_ADDRESS, credentials=grpc.alts_channel_credentials()
+    ) as channel:
         stub = demo_pb2_grpc.GRPCDemoStub(channel)
         simple_method(stub)
         client_streaming_method(stub)
@@ -35,5 +37,5 @@ def main():
         bidirectional_streaming_method(stub)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

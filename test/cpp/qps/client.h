@@ -1,30 +1,37 @@
-/*
- *
- * Copyright 2015 gRPC authors.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- *
- */
+//
+//
+// Copyright 2015 gRPC authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+//
 
-#ifndef TEST_QPS_CLIENT_H
-#define TEST_QPS_CLIENT_H
+#ifndef GRPC_TEST_CPP_QPS_CLIENT_H
+#define GRPC_TEST_CPP_QPS_CLIENT_H
 
+#include <inttypes.h>
+#include <stdint.h>
 #include <stdlib.h>
 
 #include <condition_variable>
 #include <mutex>
+#include <thread>
 #include <unordered_map>
 #include <vector>
+
+#include "absl/memory/memory.h"
+#include "absl/strings/match.h"
+#include "absl/strings/str_format.h"
 
 #include <grpc/support/log.h>
 #include <grpc/support/time.h>
@@ -33,11 +40,10 @@
 #include <grpcpp/support/channel_arguments.h>
 #include <grpcpp/support/slice.h>
 
+#include "src/core/lib/gprpp/crash.h"
+#include "src/core/lib/gprpp/env.h"
 #include "src/proto/grpc/testing/benchmark_service.grpc.pb.h"
 #include "src/proto/grpc/testing/payloads.pb.h"
-
-#include "src/core/lib/gpr/env.h"
-#include "src/cpp/util/core_stats.h"
 #include "test/cpp/qps/histogram.h"
 #include "test/cpp/qps/interarrival.h"
 #include "test/cpp/qps/qps_worker.h"
@@ -58,7 +64,7 @@ class ClientRequestCreator {
     // this template must be specialized
     // fail with an assertion rather than a compile-time
     // check since these only happen at the beginning anyway
-    GPR_ASSERT(false);
+    grpc_core::Crash("unreachable");
   }
 };
 
@@ -68,7 +74,10 @@ class ClientRequestCreator<SimpleRequest> {
   ClientRequestCreator(SimpleRequest* req,
                        const PayloadConfig& payload_config) {
     if (payload_config.has_bytebuf_params()) {
-      GPR_ASSERT(false);  // not appropriate for this specialization
+      grpc_core::Crash(absl::StrFormat(
+          "Invalid PayloadConfig, config cannot have bytebuf_params: %s",
+          payload_config.DebugString()
+              .c_str()));  // not appropriate for this specialization
     } else if (payload_config.has_simple_params()) {
       req->set_response_type(grpc::testing::PayloadType::COMPRESSABLE);
       req->set_response_size(payload_config.simple_params().resp_size());
@@ -78,7 +87,10 @@ class ClientRequestCreator<SimpleRequest> {
       std::unique_ptr<char[]> body(new char[size]);
       req->mutable_payload()->set_body(body.get(), size);
     } else if (payload_config.has_complex_params()) {
-      GPR_ASSERT(false);  // not appropriate for this specialization
+      grpc_core::Crash(absl::StrFormat(
+          "Invalid PayloadConfig, cannot have complex_params: %s",
+          payload_config.DebugString()
+              .c_str()));  // not appropriate for this specialization
     } else {
       // default should be simple proto without payloads
       req->set_response_type(grpc::testing::PayloadType::COMPRESSABLE);
@@ -101,7 +113,10 @@ class ClientRequestCreator<ByteBuffer> {
       Slice slice(buf.get(), req_sz);
       *req = ByteBuffer(&slice, 1);
     } else {
-      GPR_ASSERT(false);  // not appropriate for this specialization
+      grpc_core::Crash(absl::StrFormat(
+          "Invalid PayloadConfig, missing bytebug_params: %s",
+          payload_config.DebugString()
+              .c_str()));  // not appropriate for this specialization
     }
   }
 };
@@ -188,15 +203,12 @@ class Client {
     if (median_latency_collection_interval_seconds_ > 0) {
       std::vector<double> medians_per_interval =
           threads_[0]->GetMedianPerIntervalList();
-      gpr_log(GPR_INFO, "Num threads: %ld", threads_.size());
-      gpr_log(GPR_INFO, "Number of medians: %ld", medians_per_interval.size());
+      gpr_log(GPR_INFO, "Num threads: %zu", threads_.size());
+      gpr_log(GPR_INFO, "Number of medians: %zu", medians_per_interval.size());
       for (size_t j = 0; j < medians_per_interval.size(); j++) {
         gpr_log(GPR_INFO, "%f", medians_per_interval[j]);
       }
     }
-
-    grpc_stats_data core_stats;
-    grpc_stats_collect(&core_stats);
 
     ClientStats stats;
     latencies.FillProto(stats.mutable_latencies());
@@ -210,7 +222,6 @@ class Client {
     stats.set_time_system(timer_result.system);
     stats.set_time_user(timer_result.user);
     stats.set_cq_poll_count(poll_count);
-    CoreStatsToProto(core_stats, stats.mutable_core_stats());
     return stats;
   }
 
@@ -359,11 +370,11 @@ class Client {
         // Closed-loop doesn't use random dist at all
         break;
       case LoadParams::kPoisson:
-        random_dist.reset(
-            new ExpDist(load.poisson().offered_load() / num_threads));
+        random_dist = std::make_unique<ExpDist>(load.poisson().offered_load() /
+                                                num_threads);
         break;
       default:
-        GPR_ASSERT(false);
+        grpc_core::Crash("unreachable");
     }
 
     // Set closed_loop_ based on whether or not random_dist is set
@@ -407,7 +418,7 @@ class Client {
   void MaybeStartRequests() {
     if (!started_requests_) {
       started_requests_ = true;
-      gpr_event_set(&start_requests_, (void*)1);
+      gpr_event_set(&start_requests_, reinterpret_cast<void*>(1));
     }
   }
 
@@ -438,24 +449,23 @@ class ClientImpl : public Client {
     ClientRequestCreator<RequestType> create_req(&request_,
                                                  config.payload_config());
   }
-  virtual ~ClientImpl() {}
+  ~ClientImpl() override {}
   const RequestType* request() { return &request_; }
 
   void WaitForChannelsToConnect() {
     int connect_deadline_seconds = 10;
-    /* Allow optionally overriding connect_deadline in order
-     * to deal with benchmark environments in which the server
-     * can take a long time to become ready. */
-    char* channel_connect_timeout_str =
-        gpr_getenv("QPS_WORKER_CHANNEL_CONNECT_TIMEOUT");
-    if (channel_connect_timeout_str != nullptr &&
-        strcmp(channel_connect_timeout_str, "") != 0) {
-      connect_deadline_seconds = atoi(channel_connect_timeout_str);
+    // Allow optionally overriding connect_deadline in order
+    // to deal with benchmark environments in which the server
+    // can take a long time to become ready.
+    auto channel_connect_timeout_str =
+        grpc_core::GetEnv("QPS_WORKER_CHANNEL_CONNECT_TIMEOUT");
+    if (channel_connect_timeout_str.has_value() &&
+        !channel_connect_timeout_str->empty()) {
+      connect_deadline_seconds = atoi(channel_connect_timeout_str->c_str());
     }
     gpr_log(GPR_INFO,
             "Waiting for up to %d seconds for all channels to connect",
             connect_deadline_seconds);
-    gpr_free(channel_connect_timeout_str);
     gpr_timespec connect_deadline = gpr_time_add(
         gpr_now(GPR_CLOCK_REALTIME),
         gpr_time_from_seconds(connect_deadline_seconds, GPR_TIMESPAN));
@@ -480,9 +490,8 @@ class ClientImpl : public Client {
       cq.Next(&tag, &ok);
       Channel* channel = static_cast<Channel*>(tag);
       if (!ok) {
-        gpr_log(GPR_ERROR, "Channel %p failed to connect within the deadline",
-                channel);
-        abort();
+        grpc_core::Crash(absl::StrFormat(
+            "Channel %p failed to connect within the deadline", channel));
       } else {
         grpc_connectivity_state last_observed = channel->GetState(true);
         if (last_observed == GRPC_CHANNEL_READY) {
@@ -503,7 +512,7 @@ class ClientImpl : public Client {
   class ClientChannelInfo {
    public:
     ClientChannelInfo(
-        const grpc::string& target, const ClientConfig& config,
+        const std::string& target, const ClientConfig& config,
         std::function<std::unique_ptr<StubType>(std::shared_ptr<Channel>)>
             create_stub,
         int shard) {
@@ -511,7 +520,7 @@ class ClientImpl : public Client {
       args.SetInt("shard_to_ensure_no_subchannel_merges", shard);
       set_channel_args(config, &args);
 
-      grpc::string type;
+      std::string type;
       if (config.has_security_params() &&
           config.security_params().cred_type().empty()) {
         type = kTlsCredentialsType;
@@ -519,8 +528,8 @@ class ClientImpl : public Client {
         type = config.security_params().cred_type();
       }
 
-      grpc::string inproc_pfx(INPROC_NAME_PREFIX);
-      if (target.find(inproc_pfx) != 0) {
+      std::string inproc_pfx(INPROC_NAME_PREFIX);
+      if (!absl::StartsWith(target, inproc_pfx)) {
         channel_ = CreateTestChannel(
             target, type, config.security_params().server_host_override(),
             !config.security_params().use_test_ca(),
@@ -528,7 +537,7 @@ class ClientImpl : public Client {
         gpr_log(GPR_INFO, "Connecting to %s", target.c_str());
         is_inproc_ = false;
       } else {
-        grpc::string tgt = target;
+        std::string tgt = target;
         tgt.erase(0, inproc_pfx.length());
         int srv_num = std::stoi(tgt);
         channel_ = (*g_inproc_servers)[srv_num]->InProcessChannel(args);
@@ -562,13 +571,13 @@ class ClientImpl : public Client {
       create_stub_;
 };
 
-std::unique_ptr<Client> CreateSynchronousClient(const ClientConfig& args);
-std::unique_ptr<Client> CreateAsyncClient(const ClientConfig& args);
-std::unique_ptr<Client> CreateCallbackClient(const ClientConfig& args);
+std::unique_ptr<Client> CreateSynchronousClient(const ClientConfig& config);
+std::unique_ptr<Client> CreateAsyncClient(const ClientConfig& config);
+std::unique_ptr<Client> CreateCallbackClient(const ClientConfig& config);
 std::unique_ptr<Client> CreateGenericAsyncStreamingClient(
-    const ClientConfig& args);
+    const ClientConfig& config);
 
 }  // namespace testing
 }  // namespace grpc
 
-#endif
+#endif  // GRPC_TEST_CPP_QPS_CLIENT_H

@@ -14,22 +14,23 @@
 """Tests behavior of the wait for connection API on client side."""
 
 import asyncio
-import logging
-import unittest
 import datetime
+import logging
 from typing import Callable, Tuple
+import unittest
 
 import grpc
 from grpc.experimental import aio
 
+from src.proto.grpc.testing import messages_pb2
+from src.proto.grpc.testing import test_pb2_grpc
+from tests_aio.unit import _common
+from tests_aio.unit._constants import UNREACHABLE_TARGET
 from tests_aio.unit._test_base import AioTestBase
 from tests_aio.unit._test_server import start_test_server
-from tests_aio.unit import _common
-from src.proto.grpc.testing import messages_pb2, test_pb2_grpc
-from tests_aio.unit._constants import UNREACHABLE_TARGET
 
-_REQUEST = b'\x01\x02\x03'
-_TEST_METHOD = '/test/Test'
+_REQUEST = b"\x01\x02\x03"
+_TEST_METHOD = "/test/Test"
 
 _NUM_STREAM_RESPONSES = 5
 _REQUEST_PAYLOAD_SIZE = 7
@@ -42,11 +43,11 @@ class TestWaitForConnection(AioTestBase):
     async def setUp(self):
         address, self._server = await start_test_server()
         self._channel = aio.insecure_channel(address)
-        self._dummy_channel = aio.insecure_channel(UNREACHABLE_TARGET)
+        self._phony_channel = aio.insecure_channel(UNREACHABLE_TARGET)
         self._stub = test_pb2_grpc.TestServiceStub(self._channel)
 
     async def tearDown(self):
-        await self._dummy_channel.close()
+        await self._phony_channel.close()
         await self._channel.close()
         await self._server.stop(None)
 
@@ -63,7 +64,8 @@ class TestWaitForConnection(AioTestBase):
         request = messages_pb2.StreamingOutputCallRequest()
         for _ in range(_NUM_STREAM_RESPONSES):
             request.response_parameters.append(
-                messages_pb2.ResponseParameters(size=_RESPONSE_PAYLOAD_SIZE))
+                messages_pb2.ResponseParameters(size=_RESPONSE_PAYLOAD_SIZE)
+            )
 
         call = self._stub.StreamingOutputCall(request)
 
@@ -73,8 +75,9 @@ class TestWaitForConnection(AioTestBase):
         response_cnt = 0
         async for response in call:
             response_cnt += 1
-            self.assertIs(type(response),
-                          messages_pb2.StreamingOutputCallResponse)
+            self.assertIs(
+                type(response), messages_pb2.StreamingOutputCallResponse
+            )
             self.assertEqual(_RESPONSE_PAYLOAD_SIZE, len(response.payload.body))
 
         self.assertEqual(_NUM_STREAM_RESPONSES, response_cnt)
@@ -86,7 +89,7 @@ class TestWaitForConnection(AioTestBase):
         # No exception raised and no message swallowed.
         await call.wait_for_connection()
 
-        payload = messages_pb2.Payload(body=b'\0' * _REQUEST_PAYLOAD_SIZE)
+        payload = messages_pb2.Payload(body=b"\0" * _REQUEST_PAYLOAD_SIZE)
         request = messages_pb2.StreamingInputCallRequest(payload=payload)
 
         for _ in range(_NUM_STREAM_RESPONSES):
@@ -95,8 +98,10 @@ class TestWaitForConnection(AioTestBase):
 
         response = await call
         self.assertIsInstance(response, messages_pb2.StreamingInputCallResponse)
-        self.assertEqual(_NUM_STREAM_RESPONSES * _REQUEST_PAYLOAD_SIZE,
-                         response.aggregated_payload_size)
+        self.assertEqual(
+            _NUM_STREAM_RESPONSES * _REQUEST_PAYLOAD_SIZE,
+            response.aggregated_payload_size,
+        )
 
         self.assertEqual(await call.code(), grpc.StatusCode.OK)
 
@@ -108,13 +113,15 @@ class TestWaitForConnection(AioTestBase):
 
         request = messages_pb2.StreamingOutputCallRequest()
         request.response_parameters.append(
-            messages_pb2.ResponseParameters(size=_RESPONSE_PAYLOAD_SIZE))
+            messages_pb2.ResponseParameters(size=_RESPONSE_PAYLOAD_SIZE)
+        )
 
         for _ in range(_NUM_STREAM_RESPONSES):
             await call.write(request)
             response = await call.read()
-            self.assertIsInstance(response,
-                                  messages_pb2.StreamingOutputCallResponse)
+            self.assertIsInstance(
+                response, messages_pb2.StreamingOutputCallResponse
+            )
             self.assertEqual(_RESPONSE_PAYLOAD_SIZE, len(response.payload.body))
 
         await call.done_writing()
@@ -122,7 +129,7 @@ class TestWaitForConnection(AioTestBase):
         self.assertEqual(grpc.StatusCode.OK, await call.code())
 
     async def test_unary_unary_error(self):
-        call = self._dummy_channel.unary_unary(_TEST_METHOD)(_REQUEST)
+        call = self._phony_channel.unary_unary(_TEST_METHOD)(_REQUEST)
 
         with self.assertRaises(aio.AioRpcError) as exception_context:
             await call.wait_for_connection()
@@ -130,7 +137,7 @@ class TestWaitForConnection(AioTestBase):
         self.assertEqual(grpc.StatusCode.UNAVAILABLE, rpc_error.code())
 
     async def test_unary_stream_error(self):
-        call = self._dummy_channel.unary_stream(_TEST_METHOD)(_REQUEST)
+        call = self._phony_channel.unary_stream(_TEST_METHOD)(_REQUEST)
 
         with self.assertRaises(aio.AioRpcError) as exception_context:
             await call.wait_for_connection()
@@ -138,7 +145,7 @@ class TestWaitForConnection(AioTestBase):
         self.assertEqual(grpc.StatusCode.UNAVAILABLE, rpc_error.code())
 
     async def test_stream_unary_error(self):
-        call = self._dummy_channel.stream_unary(_TEST_METHOD)()
+        call = self._phony_channel.stream_unary(_TEST_METHOD)()
 
         with self.assertRaises(aio.AioRpcError) as exception_context:
             await call.wait_for_connection()
@@ -146,7 +153,7 @@ class TestWaitForConnection(AioTestBase):
         self.assertEqual(grpc.StatusCode.UNAVAILABLE, rpc_error.code())
 
     async def test_stream_stream_error(self):
-        call = self._dummy_channel.stream_stream(_TEST_METHOD)()
+        call = self._phony_channel.stream_stream(_TEST_METHOD)()
 
         with self.assertRaises(aio.AioRpcError) as exception_context:
             await call.wait_for_connection()
@@ -154,6 +161,6 @@ class TestWaitForConnection(AioTestBase):
         self.assertEqual(grpc.StatusCode.UNAVAILABLE, rpc_error.code())
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     logging.basicConfig(level=logging.DEBUG)
     unittest.main(verbosity=2)

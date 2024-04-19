@@ -12,9 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-licenses(["notice"])  # Apache v2
-
 load("//bazel:grpc_build_system.bzl", "grpc_cc_test", "grpc_package")
+
+licenses(["notice"])
 
 grpc_package(name = "test/cpp/common")
 
@@ -27,6 +27,7 @@ grpc_cc_test(
     tags = ["no_windows"],  # TODO(jtattermusch): fix test on windows RBE
     deps = [
         "//:grpc++_unsecure",
+        "//test/core/util:grpc_test_util_base",
         "//test/core/util:grpc_test_util_unsecure",
     ],
 )
@@ -37,8 +38,10 @@ grpc_cc_test(
     external_deps = [
         "gtest",
     ],
+    flaky = True,
     deps = [
         "//:grpc++",
+        "//src/core:closure",
         "//test/core/util:grpc_test_util",
     ],
 )
@@ -50,11 +53,16 @@ grpc_cc_test(
         "gtest",
     ],
     tags = [
+        # Test manipulates system time and requires root while running so it is only
+        # run on demand ("manual") and when no other tests are running ("exclusive").
+        # It also means that the test won't work with setups like bazel RBE.
         "manual",
+        "exclusive",
         "no_windows",
     ],
     deps = [
         "//:grpc++",
+        "//src/core:closure",
         "//test/core/util:grpc_test_util",
     ],
 )
@@ -65,6 +73,7 @@ grpc_cc_test(
     external_deps = [
         "gtest",
     ],
+    uses_event_engine = False,
     uses_polling = False,
     deps = [
         "//:grpc++",
@@ -79,19 +88,7 @@ grpc_cc_test(
     external_deps = [
         "gtest",
     ],
-    uses_polling = False,
-    deps = [
-        "//:grpc++",
-        "//test/core/util:grpc_test_util",
-    ],
-)
-
-grpc_cc_test(
-    name = "channel_filter_test",
-    srcs = ["channel_filter_test.cc"],
-    external_deps = [
-        "gtest",
-    ],
+    uses_event_engine = False,
     uses_polling = False,
     deps = [
         "//:grpc++",

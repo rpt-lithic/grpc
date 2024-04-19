@@ -1,24 +1,28 @@
-/*
- *
- * Copyright 2015 gRPC authors.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- *
- */
+//
+//
+// Copyright 2015 gRPC authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+//
 
 #include <cinttypes>
 #include <memory>
 #include <thread>
+
+#include <gtest/gtest.h>
+
+#include "absl/log/check.h"
 
 #include <grpc/grpc.h>
 #include <grpc/support/alloc.h>
@@ -31,7 +35,8 @@
 #include <grpcpp/server_builder.h>
 #include <grpcpp/server_context.h>
 
-#include "src/core/lib/gpr/env.h"
+#include "src/core/lib/gprpp/crash.h"
+#include "src/core/lib/gprpp/env.h"
 #include "src/core/lib/iomgr/port.h"
 #include "src/proto/grpc/testing/duplicate/echo_duplicate.grpc.pb.h"
 #include "src/proto/grpc/testing/echo.grpc.pb.h"
@@ -39,8 +44,6 @@
 #include "test/core/util/test_config.h"
 #include "test/cpp/util/byte_buffer_proto_helper.h"
 #include "test/cpp/util/string_ref_helper.h"
-
-#include <gtest/gtest.h>
 
 using grpc::testing::EchoRequest;
 using grpc::testing::EchoResponse;
@@ -50,7 +53,7 @@ namespace testing {
 
 namespace {
 
-void* tag(int i) { return (void*)static_cast<intptr_t>(i); }
+void* tag(int i) { return reinterpret_cast<void*>(i); }
 int detag(void* p) { return static_cast<int>(reinterpret_cast<intptr_t>(p)); }
 
 class Verifier {
@@ -76,7 +79,7 @@ class Verifier {
   // Verify keeps calling Next until all currently set
   // expected tags are complete
   void Verify(CompletionQueue* cq) {
-    GPR_ASSERT(!expectations_.empty());
+    CHECK(!expectations_.empty());
     while (!expectations_.empty()) {
       Next(cq, false);
     }
@@ -110,8 +113,8 @@ class RawEnd2EndTest : public ::testing::Test {
     void* ignored_tag;
     bool ignored_ok;
     cq_->Shutdown();
-    while (cq_->Next(&ignored_tag, &ignored_ok))
-      ;
+    while (cq_->Next(&ignored_tag, &ignored_ok)) {
+    }
     stub_.reset();
     grpc_recycle_unused_port(port_);
   }
@@ -143,21 +146,21 @@ class RawEnd2EndTest : public ::testing::Test {
 
   // For the client application to populate and send to server.
   EchoRequest send_request_;
-  ::grpc::ByteBuffer send_request_buffer_;
+  grpc::ByteBuffer send_request_buffer_;
 
   // For the server to give to gRPC to be populated by incoming request
   // from client.
   EchoRequest recv_request_;
-  ::grpc::ByteBuffer recv_request_buffer_;
+  grpc::ByteBuffer recv_request_buffer_;
 
   // For the server application to populate and send back to client.
   EchoResponse send_response_;
-  ::grpc::ByteBuffer send_response_buffer_;
+  grpc::ByteBuffer send_response_buffer_;
 
   // For the client to give to gRPC to be populated by incoming response
   // from server.
   EchoResponse recv_response_;
-  ::grpc::ByteBuffer recv_response_buffer_;
+  grpc::ByteBuffer recv_response_buffer_;
   Status recv_status_;
 
   // Both sides need contexts
@@ -363,7 +366,7 @@ TEST_F(RawEnd2EndTest, CompileTest) {
 int main(int argc, char** argv) {
   // Change the backup poll interval from 5s to 100ms to speed up the
   // ReconnectChannel test
-  grpc::testing::TestEnvironment env(argc, argv);
+  grpc::testing::TestEnvironment env(&argc, argv);
   ::testing::InitGoogleTest(&argc, argv);
   int ret = RUN_ALL_TESTS();
   return ret;

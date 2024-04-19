@@ -12,24 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# NOTE(lidiz) Unfortunately, we can't use "cimport" here because Cython
-# links it with exception handling. It introduces new dependencies.
-cdef extern from "<queue>" namespace "std" nogil:
-    cdef cppclass queue[T]:
-        queue()
-        bint empty()
-        T& front()
-        void pop()
-        void push(T&)
-        size_t size()
-
-
-cdef extern from "<mutex>" namespace "std" nogil:
-    cdef cppclass mutex:
-        mutex()
-        void lock()
-        void unlock()
-
 
 ctypedef queue[grpc_event] cpp_event_queue
 
@@ -49,21 +31,22 @@ cdef class BaseCompletionQueue:
 
     cdef grpc_completion_queue* c_ptr(self)
 
+
+cdef class _BoundEventLoop:
+    cdef readonly object loop
+    cdef readonly object read_socket  # socket.socket
+    cdef bint _has_reader
+
+
 cdef class PollerCompletionQueue(BaseCompletionQueue):
     cdef bint _shutdown
     cdef cpp_event_queue _queue
     cdef mutex _queue_mutex
-    cdef object _poller_thread
+    cdef object _poller_thread  # threading.Thread
     cdef int _write_fd
-    cdef object _read_socket
-    cdef object _write_socket
-    cdef object _loop
+    cdef object _read_socket    # socket.socket
+    cdef object _write_socket   # socket.socket
+    cdef dict _loops            # Mapping[asyncio.AbstractLoop, _BoundEventLoop]
 
     cdef void _poll(self) nogil
     cdef shutdown(self)
-
-
-cdef class CallbackCompletionQueue(BaseCompletionQueue):
-    cdef object _shutdown_completed  # asyncio.Future
-    cdef CallbackWrapper _wrapper
-    cdef object _loop

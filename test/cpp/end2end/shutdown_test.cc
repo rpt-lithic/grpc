@@ -1,22 +1,26 @@
-/*
- *
- * Copyright 2015 gRPC authors.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- *
- */
+//
+//
+// Copyright 2015 gRPC authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+//
 
 #include <thread>
+
+#include <gtest/gtest.h>
+
+#include "absl/log/check.h"
 
 #include <grpc/grpc.h>
 #include <grpc/support/log.h>
@@ -28,27 +32,23 @@
 #include <grpcpp/server_builder.h>
 #include <grpcpp/server_context.h>
 
-#include "src/core/lib/gpr/env.h"
+#include "src/core/lib/gprpp/crash.h"
+#include "src/core/lib/gprpp/env.h"
 #include "src/proto/grpc/testing/echo.grpc.pb.h"
 #include "test/core/util/port.h"
 #include "test/core/util/test_config.h"
 #include "test/cpp/util/test_credentials_provider.h"
 
-#include <gtest/gtest.h>
-
-using grpc::testing::EchoRequest;
-using grpc::testing::EchoResponse;
-
 namespace grpc {
 namespace testing {
 
-class TestServiceImpl : public ::grpc::testing::EchoTestService::Service {
+class TestServiceImpl : public grpc::testing::EchoTestService::Service {
  public:
   explicit TestServiceImpl(gpr_event* ev) : ev_(ev) {}
 
   Status Echo(ServerContext* context, const EchoRequest* /*request*/,
               EchoResponse* /*response*/) override {
-    gpr_event_set(ev_, (void*)1);
+    gpr_event_set(ev_, reinterpret_cast<void*>(1));
     while (!context->IsCancelled()) {
     }
     return Status::OK;
@@ -68,7 +68,7 @@ class ShutdownTest : public ::testing::TestWithParam<string> {
   }
 
   std::unique_ptr<Server> SetUpServer(const int port) {
-    grpc::string server_address = "localhost:" + to_string(port);
+    std::string server_address = "localhost:" + to_string(port);
 
     ServerBuilder builder;
     auto server_creds =
@@ -79,14 +79,14 @@ class ShutdownTest : public ::testing::TestWithParam<string> {
     return server;
   }
 
-  void TearDown() override { GPR_ASSERT(shutdown_); }
+  void TearDown() override { CHECK(shutdown_); }
 
   void ResetStub() {
     string target = "dns:localhost:" + to_string(port_);
     ChannelArguments args;
     auto channel_creds =
         GetCredentialsProvider()->GetChannelCredentials(GetParam(), &args);
-    channel_ = ::grpc::CreateCustomChannel(target, channel_creds, args);
+    channel_ = grpc::CreateCustomChannel(target, channel_creds, args);
     stub_ = grpc::testing::EchoTestService::NewStub(channel_);
   }
 
@@ -101,9 +101,9 @@ class ShutdownTest : public ::testing::TestWithParam<string> {
     EchoResponse response;
     request.set_message("Hello");
     ClientContext context;
-    GPR_ASSERT(!shutdown_);
+    CHECK(!shutdown_);
     Status s = stub_->Echo(&context, request, &response);
-    GPR_ASSERT(shutdown_);
+    CHECK(shutdown_);
   }
 
  protected:
@@ -117,7 +117,7 @@ class ShutdownTest : public ::testing::TestWithParam<string> {
 };
 
 std::vector<string> GetAllCredentialsTypeList() {
-  std::vector<grpc::string> credentials_types;
+  std::vector<std::string> credentials_types;
   if (GetCredentialsProvider()->GetChannelCredentials(kInsecureCredentialsType,
                                                       nullptr) != nullptr) {
     credentials_types.push_back(kInsecureCredentialsType);
@@ -126,7 +126,7 @@ std::vector<string> GetAllCredentialsTypeList() {
   for (auto sec = sec_list.begin(); sec != sec_list.end(); sec++) {
     credentials_types.push_back(*sec);
   }
-  GPR_ASSERT(!credentials_types.empty());
+  CHECK(!credentials_types.empty());
 
   std::string credentials_type_list("credentials types:");
   for (const string& type : credentials_types) {
@@ -164,7 +164,7 @@ TEST_P(ShutdownTest, ShutdownTest) {
 }  // namespace grpc
 
 int main(int argc, char** argv) {
-  grpc::testing::TestEnvironment env(argc, argv);
+  grpc::testing::TestEnvironment env(&argc, argv);
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
 }

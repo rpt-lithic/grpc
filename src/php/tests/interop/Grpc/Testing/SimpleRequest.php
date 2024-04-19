@@ -79,6 +79,12 @@ class SimpleRequest extends \Google\Protobuf\Internal\Message
      * Generated from protobuf field <code>bool fill_grpclb_route_type = 10;</code>
      */
     protected $fill_grpclb_route_type = false;
+    /**
+     * If set the server should record this metrics report data for the current RPC.
+     *
+     * Generated from protobuf field <code>.grpc.testing.TestOrcaReport orca_per_query_report = 11;</code>
+     */
+    protected $orca_per_query_report = null;
 
     /**
      * Constructor.
@@ -110,6 +116,8 @@ class SimpleRequest extends \Google\Protobuf\Internal\Message
      *           Whether SimpleResponse should include server_id.
      *     @type bool $fill_grpclb_route_type
      *           Whether SimpleResponse should include grpclb_route_type.
+     *     @type \Grpc\Testing\TestOrcaReport $orca_per_query_report
+     *           If set the server should record this metrics report data for the current RPC.
      * }
      */
     public function __construct($data = NULL) {
@@ -175,11 +183,21 @@ class SimpleRequest extends \Google\Protobuf\Internal\Message
      * Optional input payload sent along with the request.
      *
      * Generated from protobuf field <code>.grpc.testing.Payload payload = 3;</code>
-     * @return \Grpc\Testing\Payload
+     * @return \Grpc\Testing\Payload|null
      */
     public function getPayload()
     {
         return $this->payload;
+    }
+
+    public function hasPayload()
+    {
+        return isset($this->payload);
+    }
+
+    public function clearPayload()
+    {
+        unset($this->payload);
     }
 
     /**
@@ -256,11 +274,21 @@ class SimpleRequest extends \Google\Protobuf\Internal\Message
      * the response's compression status.
      *
      * Generated from protobuf field <code>.grpc.testing.BoolValue response_compressed = 6;</code>
-     * @return \Grpc\Testing\BoolValue
+     * @return \Grpc\Testing\BoolValue|null
      */
     public function getResponseCompressed()
     {
         return $this->response_compressed;
+    }
+
+    public function hasResponseCompressed()
+    {
+        return isset($this->response_compressed);
+    }
+
+    public function clearResponseCompressed()
+    {
+        unset($this->response_compressed);
     }
 
     /**
@@ -285,11 +313,21 @@ class SimpleRequest extends \Google\Protobuf\Internal\Message
      * Whether server should return a given status
      *
      * Generated from protobuf field <code>.grpc.testing.EchoStatus response_status = 7;</code>
-     * @return \Grpc\Testing\EchoStatus
+     * @return \Grpc\Testing\EchoStatus|null
      */
     public function getResponseStatus()
     {
         return $this->response_status;
+    }
+
+    public function hasResponseStatus()
+    {
+        return isset($this->response_status);
+    }
+
+    public function clearResponseStatus()
+    {
+        unset($this->response_status);
     }
 
     /**
@@ -311,11 +349,21 @@ class SimpleRequest extends \Google\Protobuf\Internal\Message
      * Whether the server should expect this request to be compressed.
      *
      * Generated from protobuf field <code>.grpc.testing.BoolValue expect_compressed = 8;</code>
-     * @return \Grpc\Testing\BoolValue
+     * @return \Grpc\Testing\BoolValue|null
      */
     public function getExpectCompressed()
     {
         return $this->expect_compressed;
+    }
+
+    public function hasExpectCompressed()
+    {
+        return isset($this->expect_compressed);
+    }
+
+    public function clearExpectCompressed()
+    {
+        unset($this->expect_compressed);
     }
 
     /**
@@ -381,6 +429,42 @@ class SimpleRequest extends \Google\Protobuf\Internal\Message
     {
         GPBUtil::checkBool($var);
         $this->fill_grpclb_route_type = $var;
+
+        return $this;
+    }
+
+    /**
+     * If set the server should record this metrics report data for the current RPC.
+     *
+     * Generated from protobuf field <code>.grpc.testing.TestOrcaReport orca_per_query_report = 11;</code>
+     * @return \Grpc\Testing\TestOrcaReport|null
+     */
+    public function getOrcaPerQueryReport()
+    {
+        return $this->orca_per_query_report;
+    }
+
+    public function hasOrcaPerQueryReport()
+    {
+        return isset($this->orca_per_query_report);
+    }
+
+    public function clearOrcaPerQueryReport()
+    {
+        unset($this->orca_per_query_report);
+    }
+
+    /**
+     * If set the server should record this metrics report data for the current RPC.
+     *
+     * Generated from protobuf field <code>.grpc.testing.TestOrcaReport orca_per_query_report = 11;</code>
+     * @param \Grpc\Testing\TestOrcaReport $var
+     * @return $this
+     */
+    public function setOrcaPerQueryReport($var)
+    {
+        GPBUtil::checkMessage($var, \Grpc\Testing\TestOrcaReport::class);
+        $this->orca_per_query_report = $var;
 
         return $this;
     }

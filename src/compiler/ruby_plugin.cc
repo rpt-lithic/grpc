@@ -30,20 +30,33 @@ class RubyGrpcGenerator : public grpc::protobuf::compiler::CodeGenerator {
   ~RubyGrpcGenerator() {}
 
   uint64_t GetSupportedFeatures() const override {
-    return FEATURE_PROTO3_OPTIONAL;
+    return FEATURE_PROTO3_OPTIONAL
+#ifdef GRPC_PROTOBUF_EDITION_SUPPORT
+           | FEATURE_SUPPORTS_EDITIONS
+#endif
+        ;
   }
 
+#ifdef GRPC_PROTOBUF_EDITION_SUPPORT
+  grpc::protobuf::Edition GetMinimumEdition() const override {
+    return grpc::protobuf::Edition::EDITION_PROTO2;
+  }
+  grpc::protobuf::Edition GetMaximumEdition() const override {
+    return grpc::protobuf::Edition::EDITION_2023;
+  }
+#endif
+
   bool Generate(const grpc::protobuf::FileDescriptor* file,
-                const grpc::string& /*parameter*/,
+                const std::string& /*parameter*/,
                 grpc::protobuf::compiler::GeneratorContext* context,
-                grpc::string* /*error*/) const override {
-    grpc::string code = grpc_ruby_generator::GetServices(file);
+                std::string* /*error*/) const override {
+    std::string code = grpc_ruby_generator::GetServices(file);
     if (code.size() == 0) {
       return true;  // don't generate a file if there are no services
     }
 
     // Get output file name.
-    grpc::string file_name;
+    std::string file_name;
     if (!grpc_ruby_generator::ServicesFilename(file, &file_name)) {
       return false;
     }

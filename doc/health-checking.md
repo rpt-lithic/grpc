@@ -37,6 +37,7 @@ message HealthCheckResponse {
     UNKNOWN = 0;
     SERVING = 1;
     NOT_SERVING = 2;
+    SERVICE_UNKNOWN = 3;  // Used only by the Watch method.
   }
   ServingStatus status = 1;
 }
@@ -50,8 +51,7 @@ service Health {
 
 A client can query the server’s health status by calling the `Check` method, and
 a deadline should be set on the rpc. The client can optionally set the service
-name it wants to query for health status. The suggested format of service name
-is `package_names.ServiceName`, such as `grpc.health.v1.Health`.
+name it wants to query for health status.
 
 The server should register all the services manually and set
 the individual status, including an empty service name and its status. For each

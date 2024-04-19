@@ -12,9 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-FROM php:7.2-stretch
+FROM php:8.1-buster
 
-RUN apt-get -qq update && apt-get -qq install -y \
+RUN apt-get -qq update && apt-get -qq -y upgrade && apt-get -qq install -y \
   autoconf automake git libtool pkg-config \
   valgrind wget zlib1g-dev
 
@@ -23,8 +23,8 @@ ARG MAKEFLAGS=-j8
 
 WORKDIR /tmp
 
-RUN wget https://phar.phpunit.de/phpunit-5.7.27.phar && \
-  mv phpunit-5.7.27.phar /usr/local/bin/phpunit && \
+RUN wget https://phar.phpunit.de/phpunit-9.5.9.phar && \
+  mv phpunit-9.5.9.phar /usr/local/bin/phpunit && \
   chmod +x /usr/local/bin/phpunit
 
 
@@ -32,15 +32,15 @@ WORKDIR /github/grpc
 
 COPY . .
 
-RUN make && make install
+RUN make shared_c static_c
 
 
 WORKDIR /github/grpc/src/php/ext/grpc
 
 RUN phpize && \
-  ./configure --enable-tests && \
+  GRPC_LIB_SUBDIR=libs/opt ./configure --enable-grpc=/github/grpc --enable-tests && \
   make && \
   make install
 
 
-CMD ["/github/grpc/src/php/bin/run_tests.sh"]
+CMD ["/github/grpc/src/php/bin/run_tests.sh", "--ignore-valgrind-undef-errors"]

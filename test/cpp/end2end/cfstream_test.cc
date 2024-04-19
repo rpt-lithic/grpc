@@ -1,28 +1,30 @@
-/*
- *
- * Copyright 2019 The gRPC Authors
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- *
- */
-
-#include "src/core/lib/iomgr/port.h"
+//
+//
+// Copyright 2019 The gRPC Authors
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+//
 
 #include <algorithm>
 #include <memory>
 #include <mutex>
 #include <random>
 #include <thread>
+
+#include <gtest/gtest.h>
+
+#include "absl/log/check.h"
 
 #include <grpc/grpc.h>
 #include <grpc/support/alloc.h>
@@ -36,13 +38,12 @@
 #include <grpcpp/health_check_service_interface.h>
 #include <grpcpp/server.h>
 #include <grpcpp/server_builder.h>
-#include <gtest/gtest.h>
 
 #include "src/core/lib/backoff/backoff.h"
-#include "src/core/lib/gpr/env.h"
-
+#include "src/core/lib/gprpp/crash.h"
+#include "src/core/lib/gprpp/env.h"
+#include "src/core/lib/iomgr/port.h"
 #include "src/proto/grpc/testing/echo.grpc.pb.h"
-#include "test/core/util/debugger_macros.h"
 #include "test/core/util/port.h"
 #include "test/core/util/test_config.h"
 #include "test/cpp/end2end/test_service_impl.h"
@@ -60,10 +61,10 @@ namespace testing {
 namespace {
 
 struct TestScenario {
-  TestScenario(const grpc::string& creds_type, const grpc::string& content)
+  TestScenario(const std::string& creds_type, const std::string& content)
       : credentials_type(creds_type), message_content(content) {}
-  const grpc::string credentials_type;
-  const grpc::string message_content;
+  const std::string credentials_type;
+  const std::string message_content;
 };
 
 class CFStreamTest : public ::testing::TestWithParam<TestScenario> {
@@ -145,18 +146,6 @@ class CFStreamTest : public ::testing::TestWithParam<TestScenario> {
     return CreateCustomChannel(server_address.str(), channel_creds, args);
   }
 
-  int GetStreamID(ClientContext& context) {
-    int stream_id = 0;
-    grpc_call* call = context.c_call();
-    if (call) {
-      grpc_chttp2_stream* stream = grpc_chttp2_stream_from_call(call);
-      if (stream) {
-        stream_id = stream->id;
-      }
-    }
-    return stream_id;
-  }
-
   void SendRpc(
       const std::unique_ptr<grpc::testing::EchoTestService::Stub>& stub,
       bool expect_success = false) {
@@ -166,13 +155,11 @@ class CFStreamTest : public ::testing::TestWithParam<TestScenario> {
     request.set_message(msg);
     ClientContext context;
     Status status = stub->Echo(&context, request, response.get());
-    int stream_id = GetStreamID(context);
     if (status.ok()) {
-      gpr_log(GPR_DEBUG, "RPC with stream_id %d succeeded", stream_id);
+      gpr_log(GPR_DEBUG, "RPC with succeeded");
       EXPECT_EQ(msg, response->message());
     } else {
-      gpr_log(GPR_DEBUG, "RPC with stream_id %d failed: %s", stream_id,
-              status.error_message().c_str());
+      gpr_log(GPR_DEBUG, "RPC failed: %s", status.error_message().c_str());
     }
     if (expect_success) {
       EXPECT_TRUE(status.ok());
@@ -203,11 +190,11 @@ class CFStreamTest : public ::testing::TestWithParam<TestScenario> {
     } else if (ret == grpc::CompletionQueue::SHUTDOWN) {
       return false;
     } else {
-      GPR_ASSERT(ret == grpc::CompletionQueue::TIMEOUT);
+      CHECK(ret == grpc::CompletionQueue::TIMEOUT);
       // This can happen if we hit the Apple CFStream bug which results in the
-      // read stream hanging. We are ignoring hangs and timeouts, but these
+      // read stream freezing. We are ignoring hangs and timeouts, but these
       // tests are still useful as they can catch memory memory corruptions,
-      // crashes and other bugs that don't result in test hang/timeout.
+      // crashes and other bugs that don't result in test freeze/timeout.
       return false;
     }
   }
@@ -244,16 +231,16 @@ class CFStreamTest : public ::testing::TestWithParam<TestScenario> {
  private:
   struct ServerData {
     int port_;
-    const grpc::string creds_;
+    const std::string creds_;
     std::unique_ptr<Server> server_;
     TestServiceImpl service_;
     std::unique_ptr<std::thread> thread_;
     bool server_ready_ = false;
 
-    ServerData(int port, const grpc::string& creds)
+    ServerData(int port, const std::string& creds)
         : port_(port), creds_(creds) {}
 
-    void Start(const grpc::string& server_host) {
+    void Start(const std::string& server_host) {
       gpr_log(GPR_INFO, "starting server on port %d", port_);
       std::mutex mu;
       std::unique_lock<std::mutex> lock(mu);
@@ -265,7 +252,7 @@ class CFStreamTest : public ::testing::TestWithParam<TestScenario> {
       gpr_log(GPR_INFO, "server startup complete");
     }
 
-    void Serve(const grpc::string& server_host, std::mutex* mu,
+    void Serve(const std::string& server_host, std::mutex* mu,
                std::condition_variable* cond) {
       std::ostringstream server_address;
       server_address << server_host << ":" << port_;
@@ -287,17 +274,17 @@ class CFStreamTest : public ::testing::TestWithParam<TestScenario> {
   };
 
   CompletionQueue cq_;
-  const grpc::string server_host_;
-  const grpc::string interface_;
-  const grpc::string ipv4_address_;
+  const std::string server_host_;
+  const std::string interface_;
+  const std::string ipv4_address_;
   std::unique_ptr<ServerData> server_;
   int port_;
 };
 
 std::vector<TestScenario> CreateTestScenarios() {
   std::vector<TestScenario> scenarios;
-  std::vector<grpc::string> credentials_types;
-  std::vector<grpc::string> messages;
+  std::vector<std::string> credentials_types;
+  std::vector<std::string> messages;
 
   credentials_types.push_back(kInsecureCredentialsType);
   auto sec_list = GetCredentialsProvider()->GetSecureCredentialsTypeList();
@@ -307,7 +294,7 @@ std::vector<TestScenario> CreateTestScenarios() {
 
   messages.push_back("🖖");
   for (size_t k = 1; k < GRPC_DEFAULT_MAX_RECV_MESSAGE_LENGTH / 1024; k *= 32) {
-    grpc::string big_msg;
+    std::string big_msg;
     for (size_t i = 0; i < k * 1024; ++i) {
       char c = 'a' + (i % 26);
       big_msg += c;
@@ -390,19 +377,18 @@ TEST_P(CFStreamTest, NetworkFlapRpcsInFlight) {
 
     while (CQNext(&got_tag, &ok)) {
       ++total_completions;
-      GPR_ASSERT(ok);
+      CHECK(ok);
       AsyncClientCall* call = static_cast<AsyncClientCall*>(got_tag);
-      int stream_id = GetStreamID(call->context);
       if (!call->status.ok()) {
-        gpr_log(GPR_DEBUG, "RPC with stream_id %d failed with error: %s",
-                stream_id, call->status.error_message().c_str());
+        gpr_log(GPR_DEBUG, "RPC failed with error: %s",
+                call->status.error_message().c_str());
         // Bring network up when RPCs start failing
         if (network_down) {
           NetworkUp();
           network_down = false;
         }
       } else {
-        gpr_log(GPR_DEBUG, "RPC with stream_id %d succeeded", stream_id);
+        gpr_log(GPR_DEBUG, "RPC succeeded");
       }
       delete call;
     }
@@ -438,15 +424,14 @@ TEST_P(CFStreamTest, ConcurrentRpc) {
 
     while (CQNext(&got_tag, &ok)) {
       ++total_completions;
-      GPR_ASSERT(ok);
+      CHECK(ok);
       AsyncClientCall* call = static_cast<AsyncClientCall*>(got_tag);
-      int stream_id = GetStreamID(call->context);
       if (!call->status.ok()) {
-        gpr_log(GPR_DEBUG, "RPC with stream_id %d failed with error: %s",
-                stream_id, call->status.error_message().c_str());
+        gpr_log(GPR_DEBUG, "RPC failed with error: %s",
+                call->status.error_message().c_str());
         // Bring network up when RPCs start failing
       } else {
-        gpr_log(GPR_DEBUG, "RPC with stream_id %d succeeded", stream_id);
+        gpr_log(GPR_DEBUG, "RPC succeeded");
       }
       delete call;
     }
@@ -489,8 +474,8 @@ TEST_P(CFStreamTest, ConcurrentRpc) {
 
 int main(int argc, char** argv) {
   ::testing::InitGoogleTest(&argc, argv);
-  grpc::testing::TestEnvironment env(argc, argv);
-  gpr_setenv("grpc_cfstream", "1");
+  grpc::testing::TestEnvironment env(&argc, argv);
+  grpc_core::SetEnv("grpc_cfstream", "1");
   const auto result = RUN_ALL_TESTS();
   return result;
 }

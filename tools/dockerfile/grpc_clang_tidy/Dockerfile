@@ -12,30 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-FROM debian:10
+FROM silkeh/clang:17-bullseye
 
-# Install clang-tidy 6.0
-# This is because clang-tidy 7.0 started treating compiler errors as tidy errors
-# and there are a couple of files which are not properly compiled via tidy so it
-# should be using 6.0 version until all compilation errors are addressed.
-RUN apt-get update && apt-get install -y clang-tidy-6.0
-ENV CLANG_TIDY=clang-tidy-6.0
+# Install prerequisites for the clang-tidy script
+RUN apt-get update && apt-get install -y python3 jq git && apt-get clean
 
-#====================
-# Python dependencies
-
-# Install dependencies
-
-RUN apt-get update && apt-get install -y \
-    python-all-dev \
-    python3-all-dev \
-    python-setuptools
-
-# Install Python packages from PyPI
-RUN curl https://bootstrap.pypa.io/get-pip.py | python2.7
-RUN pip install --upgrade pip==19.3.1
-RUN pip install virtualenv==16.7.9
-RUN pip install futures==2.2.0 enum34==1.0.4 protobuf==3.5.2.post1 six==1.10.0 twisted==17.5.0
+# otherwise clang-tidy will report missing <gtest/gtest.h> header
+RUN apt-get update && apt-get install -y libgtest-dev && apt-get clean
 
 ADD clang_tidy_all_the_things.sh /
 

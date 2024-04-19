@@ -15,7 +15,7 @@
 
 cdef class Server:
 
-  def __cinit__(self, object arguments):
+  def __cinit__(self, object arguments, bint xds):
     fork_handlers_and_grpc_init()
     self.references = []
     self.registered_completion_queues = []
@@ -25,6 +25,12 @@ cdef class Server:
     self.c_server = NULL
     cdef _ChannelArgs channel_args = _ChannelArgs(arguments)
     self.c_server = grpc_server_create(channel_args.c_args(), NULL)
+    cdef grpc_server_xds_status_notifier notifier
+    notifier.on_serving_status_update = NULL
+    notifier.user_data = NULL
+    if xds:
+      grpc_server_set_config_fetcher(self.c_server,
+        grpc_server_config_fetcher_xds_create(notifier, channel_args.c_args()))
     self.references.append(arguments)
 
   def request_call(
@@ -82,12 +88,14 @@ cdef class Server:
     if server_credentials is not None:
       self.references.append(server_credentials)
       with nogil:
-        result = grpc_server_add_secure_http2_port(
+        result = grpc_server_add_http2_port(
             self.c_server, address_c_string, server_credentials.c_credentials)
     else:
       with nogil:
-        result = grpc_server_add_insecure_http2_port(self.c_server,
-                                                     address_c_string)
+        creds = grpc_insecure_server_credentials_create()
+        result = grpc_server_add_http2_port(self.c_server,
+                                            address_c_string, creds)
+        grpc_server_credentials_release(creds)
     return result
 
   cdef _c_shutdown(self, CompletionQueue queue, tag):
@@ -154,4 +162,4 @@ cdef class Server:
 
   def __dealloc__(self):
     if self.c_server == NULL:
-      grpc_shutdown_blocking()
+      grpc_shutdown()

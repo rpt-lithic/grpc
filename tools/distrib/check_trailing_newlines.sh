@@ -17,33 +17,28 @@
 cd $(dirname $0)/../..
 
 function find_without_newline() {
-  find . -type f -not -path './third_party/*' -and \(  \
-                             -name '*.c'               \
-                         -or -name '*.cc'              \
-                         -or -name '*.proto'           \
-                         -or -name '*.rb'              \
-                         -or -name '*.py'              \
-                         -or -name '*.cs'              \
-                         -or -name '*.sh' \) -print0   \
-                         | while IFS= read -r -d '' f; do
-    if [[ ! -z $f ]]; then
-      if [[ $(tail -c 1 "$f") != $NEWLINE ]]; then
-        echo "Error: file '$f' is missing a trailing newline character."
-        if $2; then  # fix
-          sed -i -e '$a\' $f
-          echo 'Fixed!'
+  git ls-files |
+    sed -En -e '/^third_party/d' -e '/\.(c|cc|proto|rb|py|cs|sh)$/p' |
+    while IFS= read -r -d '' f; do
+      if [[ ! -z $f ]]; then
+        if [[ $(tail -c 1 "$f") != $NEWLINE ]]; then
+          echo "Error: file '$f' is missing a trailing newline character."
+          if $1; then # fix
+            sed -i -e '$a\' $f
+            echo 'Fixed!'
+          fi
         fi
       fi
-    fi
-  done
+    done
 }
 
 if [[ $# == 1 && $1 == '--fix' ]]; then
-  ERRORS=$(find_without_newline true)
+  FIX=true
 else
-  ERRORS=$(find_without_newline false)
+  FIX=false
 fi
 
+ERRORS=$(find_without_newline $FIX)
 if [[ "$ERRORS" != '' ]]; then
   echo "$ERRORS"
   if ! $FIX; then

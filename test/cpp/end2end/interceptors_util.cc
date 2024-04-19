@@ -1,32 +1,38 @@
-/*
- *
- * Copyright 2018 gRPC authors.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- *
- */
+//
+//
+// Copyright 2018 gRPC authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+//
 
 #include "test/cpp/end2end/interceptors_util.h"
+
+#include "absl/log/check.h"
+#include "absl/memory/memory.h"
+
+#include "test/core/util/test_config.h"
 
 namespace grpc {
 namespace testing {
 
-std::atomic<int> DummyInterceptor::num_times_run_;
-std::atomic<int> DummyInterceptor::num_times_run_reverse_;
-std::atomic<int> DummyInterceptor::num_times_cancel_;
+std::atomic<int> PhonyInterceptor::num_times_run_;
+std::atomic<int> PhonyInterceptor::num_times_run_reverse_;
+std::atomic<int> PhonyInterceptor::num_times_cancel_;
 
-void MakeCall(const std::shared_ptr<Channel>& channel) {
-  auto stub = grpc::testing::EchoTestService::NewStub(channel);
+void MakeCall(const std::shared_ptr<Channel>& channel,
+              const StubOptions& options) {
+  auto stub = grpc::testing::EchoTestService::NewStub(channel, options);
   ClientContext ctx;
   EchoRequest req;
   req.mutable_param()->set_echo_metadata(true);
@@ -46,7 +52,7 @@ void MakeClientStreamingCall(const std::shared_ptr<Channel>& channel) {
   ctx.AddMetadata("testkey", "testvalue");
   req.set_message("Hello");
   EchoResponse resp;
-  string expected_resp = "";
+  string expected_resp;
   auto writer = stub->RequestStream(&ctx, &resp);
   for (int i = 0; i < kNumStreamingMessages; i++) {
     writer->Write(req);
@@ -114,7 +120,8 @@ void MakeAsyncCQCall(const std::shared_ptr<Channel>& channel) {
   EXPECT_TRUE(recv_status.ok());
 }
 
-void MakeAsyncCQClientStreamingCall(const std::shared_ptr<Channel>& channel) {
+void MakeAsyncCQClientStreamingCall(
+    const std::shared_ptr<Channel>& /*channel*/) {
   // TODO(yashykt) : Fill this out
 }
 
@@ -146,13 +153,14 @@ void MakeAsyncCQServerStreamingCall(const std::shared_ptr<Channel>& channel) {
   EXPECT_TRUE(recv_status.ok());
 }
 
-void MakeAsyncCQBidiStreamingCall(const std::shared_ptr<Channel>& channel) {
+void MakeAsyncCQBidiStreamingCall(const std::shared_ptr<Channel>& /*channel*/) {
   // TODO(yashykt) : Fill this out
 }
 
 void MakeCallbackCall(const std::shared_ptr<Channel>& channel) {
   auto stub = grpc::testing::EchoTestService::NewStub(channel);
   ClientContext ctx;
+  ctx.set_deadline(grpc_timeout_milliseconds_to_deadline(20000));
   EchoRequest req;
   std::mutex mu;
   std::condition_variable cv;
@@ -161,14 +169,13 @@ void MakeCallbackCall(const std::shared_ptr<Channel>& channel) {
   ctx.AddMetadata("testkey", "testvalue");
   req.set_message("Hello");
   EchoResponse resp;
-  stub->experimental_async()->Echo(&ctx, &req, &resp,
-                                   [&resp, &mu, &done, &cv](Status s) {
-                                     EXPECT_EQ(s.ok(), true);
-                                     EXPECT_EQ(resp.message(), "Hello");
-                                     std::lock_guard<std::mutex> l(mu);
-                                     done = true;
-                                     cv.notify_one();
-                                   });
+  stub->async()->Echo(&ctx, &req, &resp, [&resp, &mu, &done, &cv](Status s) {
+    EXPECT_EQ(s.ok(), true);
+    EXPECT_EQ(resp.message(), "Hello");
+    std::lock_guard<std::mutex> l(mu);
+    done = true;
+    cv.notify_one();
+  });
   std::unique_lock<std::mutex> l(mu);
   while (!done) {
     cv.wait(l);
@@ -185,7 +192,7 @@ bool CheckMetadata(const std::multimap<grpc::string_ref, grpc::string_ref>& map,
   return false;
 }
 
-bool CheckMetadata(const std::multimap<grpc::string, grpc::string>& map,
+bool CheckMetadata(const std::multimap<std::string, std::string>& map,
                    const string& key, const string& value) {
   for (const auto& pair : map) {
     if (pair.first == key && pair.second == value) {
@@ -196,14 +203,13 @@ bool CheckMetadata(const std::multimap<grpc::string, grpc::string>& map,
 }
 
 std::vector<std::unique_ptr<experimental::ClientInterceptorFactoryInterface>>
-CreateDummyClientInterceptors() {
+CreatePhonyClientInterceptors() {
   std::vector<std::unique_ptr<experimental::ClientInterceptorFactoryInterface>>
       creators;
-  // Add 20 dummy interceptors before hijacking interceptor
+  // Add 20 phony interceptors before hijacking interceptor
   creators.reserve(20);
   for (auto i = 0; i < 20; i++) {
-    creators.push_back(std::unique_ptr<DummyInterceptorFactory>(
-        new DummyInterceptorFactory()));
+    creators.push_back(std::make_unique<PhonyInterceptorFactory>());
   }
   return creators;
 }

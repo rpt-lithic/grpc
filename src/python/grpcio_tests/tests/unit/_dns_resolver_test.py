@@ -13,21 +13,20 @@
 # limitations under the License.
 """Tests for an actual dns resolution."""
 
-import unittest
 import logging
-import six
+import unittest
 
 import grpc
+
 from tests.unit import test_common
 from tests.unit.framework.common import test_constants
 
-_METHOD = '/ANY/METHOD'
-_REQUEST = b'\x00\x00\x00'
+_METHOD = "/ANY/METHOD"
+_REQUEST = b"\x00\x00\x00"
 _RESPONSE = _REQUEST
 
 
 class GenericHandler(grpc.GenericRpcHandler):
-
     def service(self, unused_handler_details):
         return grpc.unary_unary_rpc_method_handler(
             lambda request, unused_context: request,
@@ -35,11 +34,10 @@ class GenericHandler(grpc.GenericRpcHandler):
 
 
 class DNSResolverTest(unittest.TestCase):
-
     def setUp(self):
         self._server = test_common.test_server()
         self._server.add_generic_rpc_handlers((GenericHandler(),))
-        self._port = self._server.add_insecure_port('[::]:0')
+        self._port = self._server.add_insecure_port("[::]:0")
         self._server.start()
 
     def tearDown(self):
@@ -48,16 +46,26 @@ class DNSResolverTest(unittest.TestCase):
     def test_connect_loopback(self):
         # NOTE(https://github.com/grpc/grpc/issues/18422)
         # In short, Gevent + C-Ares = Segfault. The C-Ares driver is not
-        # supported by custom io manager like "gevent" or "libuv".
-        with grpc.insecure_channel('loopback4.unittest.grpc.io:%d' %
-                                   self._port) as channel:
+        # supported by custom io manager like "gevent"
+        # NOTE(b/201064791): use loopback46.unittest.grpc.io since
+        # it returns the expected responses even when DNS64 dns servers
+        # are used on the test worker (and for purposes of this
+        # test the use of loopback4 vs loopback46 makes no difference).
+        with grpc.insecure_channel(
+            "loopback46.unittest.grpc.io:%d" % self._port
+        ) as channel:
             self.assertEqual(
-                channel.unary_unary(_METHOD)(
+                channel.unary_unary(
+                    _METHOD,
+                    _registered_method=True,
+                )(
                     _REQUEST,
-                    timeout=test_constants.SHORT_TIMEOUT,
-                ), _RESPONSE)
+                    timeout=10,
+                ),
+                _RESPONSE,
+            )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     logging.basicConfig()
     unittest.main(verbosity=2)

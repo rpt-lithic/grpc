@@ -16,18 +16,20 @@
  *
  */
 
+/**
+ * class Channel
+ * @see https://github.com/grpc/grpc/tree/master/src/php/ext/grpc/channel.c
+ */
+
 #include "channel.h"
 
 #include <ext/standard/php_var.h>
 #include <ext/standard/sha1.h>
-#if PHP_MAJOR_VERSION < 7
-#include <ext/standard/php_smart_str.h>
-#else
 #include <zend_smart_str.h>
-#endif
 #include <ext/spl/spl_exceptions.h>
 #include <zend_exceptions.h>
 
+#include <grpc/credentials.h>
 #include <grpc/grpc_security.h>
 #include <grpc/support/alloc.h>
 #include <grpc/support/log.h>
@@ -45,7 +47,7 @@ extern HashTable grpc_persistent_list;
 extern HashTable grpc_target_upper_bound_map;
 
 void free_grpc_channel_wrapper(grpc_channel_wrapper* channel, bool free_channel) {
-  if (free_channel) {
+  if (free_channel && channel->wrapped) {
     grpc_channel_destroy(channel->wrapped);
     channel->wrapped = NULL;
   }
@@ -240,11 +242,12 @@ void create_channel(
     grpc_channel_args args,
     wrapped_grpc_channel_credentials *creds) {
   if (creds == NULL) {
-    channel->wrapper->wrapped = grpc_insecure_channel_create(target, &args,
-                                                             NULL);
+    grpc_channel_credentials* insecure_creds = grpc_insecure_credentials_create();
+    channel->wrapper->wrapped = grpc_channel_create(target, insecure_creds, &args);
+    grpc_channel_credentials_release(insecure_creds);
   } else {
     channel->wrapper->wrapped =
-        grpc_secure_channel_create(creds->wrapped, target, &args, NULL);
+        grpc_channel_create(target, creds->wrapped, &args);
   }
   // There is an Grpc\Channel object refer to it.
   php_grpc_channel_ref(channel->wrapper);
@@ -788,14 +791,12 @@ GRPC_STARTUP_FUNCTION(channel) {
   gpr_mu_init(&global_persistent_list_mu);
   le_plink = zend_register_list_destructors_ex(
       NULL, php_grpc_channel_plink_dtor, "Persistent Channel", module_number);
-  zend_hash_init_ex(&grpc_persistent_list, 20, NULL,
-                    EG(persistent_list).pDestructor, 1, 0);
+  ZEND_HASH_INIT(&grpc_persistent_list, 20, EG(persistent_list).pDestructor, 1);
   // Register the target->upper_bound map.
   le_bound = zend_register_list_destructors_ex(
       NULL, php_grpc_target_bound_dtor, "Target Bound", module_number);
-  zend_hash_init_ex(&grpc_target_upper_bound_map, 20, NULL,
-                    EG(persistent_list).pDestructor, 1, 0);
-
+  ZEND_HASH_INIT(&grpc_target_upper_bound_map, 20, EG(persistent_list).pDestructor, 1);
+  
   PHP_GRPC_INIT_HANDLER(wrapped_grpc_channel, channel_ce_handlers);
   return SUCCESS;
 }

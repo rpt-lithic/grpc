@@ -1,20 +1,29 @@
-/*
- *
- * Copyright 2019 gRPC authors.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- *
- */
+//
+//
+// Copyright 2019 gRPC authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+//
+
+#include <sys/time.h>
+
+#include <thread>
+
+#include <gtest/gtest.h>
+
+#include "absl/log/check.h"
+#include "absl/memory/memory.h"
 
 #include <grpc/grpc.h>
 #include <grpc/support/log.h>
@@ -26,19 +35,13 @@
 #include <grpcpp/server_builder.h>
 #include <grpcpp/server_context.h>
 
+#include "src/core/lib/gprpp/crash.h"
 #include "src/core/lib/iomgr/timer.h"
 #include "src/proto/grpc/testing/echo.grpc.pb.h"
 #include "test/core/util/port.h"
 #include "test/core/util/test_config.h"
 #include "test/cpp/end2end/test_service_impl.h"
 #include "test/cpp/util/subprocess.h"
-
-#include <gtest/gtest.h>
-#include <sys/time.h>
-#include <thread>
-
-using grpc::testing::EchoRequest;
-using grpc::testing::EchoResponse;
 
 static std::string g_root;
 
@@ -54,8 +57,8 @@ static gpr_timespec now_impl(gpr_clock_type clock) {
   if (clock != GPR_CLOCK_REALTIME) {
     return ts;
   }
-  GPR_ASSERT(ts.tv_nsec >= 0);
-  GPR_ASSERT(ts.tv_nsec < GPR_NS_PER_SEC);
+  CHECK_GE(ts.tv_nsec, 0);
+  CHECK(ts.tv_nsec < GPR_NS_PER_SEC);
   gpr_mu_lock(&g_mu);
   ts.tv_sec += g_time_shift_sec;
   ts.tv_nsec += g_time_shift_nsec;
@@ -95,7 +98,7 @@ namespace {
 // gpr_now() is called with invalid clock_type
 TEST(TimespecTest, GprNowInvalidClockType) {
   // initialize to some junk value
-  gpr_clock_type invalid_clock_type = (gpr_clock_type)32641;
+  gpr_clock_type invalid_clock_type = static_cast<gpr_clock_type>(32641);
   EXPECT_DEATH(gpr_now(invalid_clock_type), ".*");
 }
 
@@ -118,44 +121,46 @@ TEST(TimespecTest, GprTimeSubNegativeNs) {
 // Add negative milliseconds to gpr_timespec
 TEST(TimespecTest, GrpcNegativeMillisToTimespec) {
   // -1500 milliseconds converts to timespec (-2 secs, 5 * 10^8 nsec)
-  gpr_timespec ts = grpc_millis_to_timespec(-1500, GPR_CLOCK_MONOTONIC);
-  GPR_ASSERT(ts.tv_sec = -2);
-  GPR_ASSERT(ts.tv_nsec = 5e8);
-  GPR_ASSERT(ts.clock_type == GPR_CLOCK_MONOTONIC);
+  gpr_timespec ts =
+      grpc_core::Timestamp::FromMillisecondsAfterProcessEpoch(-1500)
+          .as_timespec(GPR_CLOCK_MONOTONIC);
+  CHECK(ts.tv_sec = -2);
+  CHECK(ts.tv_nsec = 5e8);
+  CHECK(ts.clock_type == GPR_CLOCK_MONOTONIC);
 }
 
 class TimeChangeTest : public ::testing::Test {
  protected:
   TimeChangeTest() {}
 
-  static void SetUpTestCase() {
+  static void SetUpTestSuite() {
     auto port = grpc_pick_unused_port_or_die();
     std::ostringstream addr_stream;
     addr_stream << "localhost:" << port;
     server_address_ = addr_stream.str();
-    server_.reset(new SubProcess({
+    server_ = std::make_unique<SubProcess>(std::vector<std::string>({
         g_root + "/client_crash_test_server",
         "--address=" + server_address_,
     }));
-    GPR_ASSERT(server_);
+    CHECK(server_);
     // connect to server and make sure it's reachable.
     auto channel =
         grpc::CreateChannel(server_address_, InsecureChannelCredentials());
-    GPR_ASSERT(channel);
+    CHECK(channel);
     EXPECT_TRUE(channel->WaitForConnected(
         grpc_timeout_milliseconds_to_deadline(30000)));
   }
 
-  static void TearDownTestCase() { server_.reset(); }
+  static void TearDownTestSuite() { server_.reset(); }
 
-  void SetUp() {
+  void SetUp() override {
     channel_ =
         grpc::CreateChannel(server_address_, InsecureChannelCredentials());
-    GPR_ASSERT(channel_);
+    CHECK(channel_);
     stub_ = grpc::testing::EchoTestService::NewStub(channel_);
   }
 
-  void TearDown() { reset_now_offset(); }
+  void TearDown() override { reset_now_offset(); }
 
   std::unique_ptr<grpc::testing::EchoTestService::Stub> CreateStub() {
     return grpc::testing::EchoTestService::NewStub(channel_);
@@ -184,7 +189,7 @@ TEST_F(TimeChangeTest, TimeJumpForwardBeforeStreamCreated) {
   context.AddMetadata(kServerResponseStreamsToSend, "1");
 
   auto channel = GetChannel();
-  GPR_ASSERT(channel);
+  CHECK(channel);
   EXPECT_TRUE(
       channel->WaitForConnected(grpc_timeout_milliseconds_to_deadline(5000)));
   auto stub = CreateStub();
@@ -211,7 +216,7 @@ TEST_F(TimeChangeTest, TimeJumpBackBeforeStreamCreated) {
   context.AddMetadata(kServerResponseStreamsToSend, "1");
 
   auto channel = GetChannel();
-  GPR_ASSERT(channel);
+  CHECK(channel);
   EXPECT_TRUE(
       channel->WaitForConnected(grpc_timeout_milliseconds_to_deadline(5000)));
   auto stub = CreateStub();
@@ -239,7 +244,7 @@ TEST_F(TimeChangeTest, TimeJumpForwardAfterStreamCreated) {
   context.AddMetadata(kServerResponseStreamsToSend, "2");
 
   auto channel = GetChannel();
-  GPR_ASSERT(channel);
+  CHECK(channel);
   EXPECT_TRUE(
       channel->WaitForConnected(grpc_timeout_milliseconds_to_deadline(5000)));
   auto stub = CreateStub();
@@ -271,7 +276,7 @@ TEST_F(TimeChangeTest, TimeJumpBackAfterStreamCreated) {
   context.AddMetadata(kServerResponseStreamsToSend, "2");
 
   auto channel = GetChannel();
-  GPR_ASSERT(channel);
+  CHECK(channel);
   EXPECT_TRUE(
       channel->WaitForConnected(grpc_timeout_milliseconds_to_deadline(5000)));
   auto stub = CreateStub();
@@ -303,7 +308,7 @@ TEST_F(TimeChangeTest, TimeJumpForwardAndBackDuringCall) {
   context.AddMetadata(kServerResponseStreamsToSend, "2");
 
   auto channel = GetChannel();
-  GPR_ASSERT(channel);
+  CHECK(channel);
 
   EXPECT_TRUE(
       channel->WaitForConnected(grpc_timeout_milliseconds_to_deadline(5000)));
@@ -360,7 +365,7 @@ int main(int argc, char** argv) {
   gpr_mu_init(&g_mu);
   gpr_now_impl = now_impl;
 
-  grpc::testing::TestEnvironment env(argc, argv);
+  grpc::testing::TestEnvironment env(&argc, argv);
   ::testing::InitGoogleTest(&argc, argv);
   auto ret = RUN_ALL_TESTS();
   return ret;

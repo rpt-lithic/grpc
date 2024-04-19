@@ -46,6 +46,7 @@ cdef class _AioCall(GrpcCallWrapper):
 
     def __cinit__(self, AioChannel channel, object deadline,
                   bytes method, CallCredentials call_credentials, object wait_for_ready):
+        init_grpc_aio()
         self.call = NULL
         self._channel = channel
         self._loop = channel.loop
@@ -63,6 +64,7 @@ cdef class _AioCall(GrpcCallWrapper):
     def __dealloc__(self):
         if self.call:
             grpc_call_unref(self.call)
+        shutdown_grpc_aio()
 
     def _repr(self) -> str:
         """Assembles the RPC representation string."""
@@ -132,37 +134,38 @@ cdef class _AioCall(GrpcCallWrapper):
     cdef void _set_status(self, AioRpcStatus status) except *:
         cdef list waiters
 
+        # No more waiters should be expected since status has been set.
         self._status = status
 
         if self._initial_metadata is None:
             self._set_initial_metadata(_IMMUTABLE_EMPTY_METADATA)
 
-        # No more waiters should be expected since status
-        # has been set.
-        waiters = self._waiters_status
-        self._waiters_status = None
-
-        for waiter in waiters:
+        for waiter in self._waiters_status:
             if not waiter.done():
                 waiter.set_result(None)
+        self._waiters_status = []
 
         for callback in self._done_callbacks:
             callback()
 
     cdef void _set_initial_metadata(self, tuple initial_metadata) except *:
+        if self._initial_metadata is not None:
+            # Some gRPC calls might end before the initial metadata arrived in
+            # the Call object. That causes this method to be invoked twice: 1.
+            # filled with an empty metadata; 2. updated with the actual user
+            # provided metadata.
+            return
+
         cdef list waiters
 
+        # No more waiters should be expected since initial metadata has been
+        # set.
         self._initial_metadata = initial_metadata
 
-        # No more waiters should be expected since initial metadata
-        # has been set.
-        waiters = self._waiters_initial_metadata
-        self._waiters_initial_metadata = None
-
-        for waiter in waiters:
+        for waiter in self._waiters_initial_metadata:
             if not waiter.done():
                 waiter.set_result(None)
-
+        self._waiters_initial_metadata = []
 
     def add_done_callback(self, callback):
         if self.done():
@@ -282,14 +285,24 @@ cdef class _AioCall(GrpcCallWrapper):
 
         return False
 
+    def set_internal_error(self, str error_str):
+        self._set_status(AioRpcStatus(
+            StatusCode.internal,
+            'Internal error from Core',
+            (),
+            error_str,
+        ))
+
     async def unary_unary(self,
                           bytes request,
-                          tuple outbound_initial_metadata):
+                          tuple outbound_initial_metadata,
+                          object context = None):
         """Performs a unary unary RPC.
 
         Args:
           request: the serialized requests in bytes.
           outbound_initial_metadata: optional outbound metadata.
+          context: instrumentation context.
         """
         cdef tuple ops
 
@@ -302,6 +315,8 @@ cdef class _AioCall(GrpcCallWrapper):
         cdef ReceiveMessageOperation receive_message_op = ReceiveMessageOperation(_EMPTY_FLAGS)
         cdef ReceiveStatusOnClientOperation receive_status_on_client_op = ReceiveStatusOnClientOperation(_EMPTY_FLAGS)
 
+        if context is not None:
+            set_instrumentation_context_on_call_aio(self, context)
         ops = (initial_metadata_op, send_message_op, send_close_op,
                receive_initial_metadata_op, receive_message_op,
                receive_status_on_client_op)
@@ -358,7 +373,7 @@ cdef class _AioCall(GrpcCallWrapper):
             self,
             self._loop
         )
-        if received_message:
+        if received_message is not None:
             return received_message
         else:
             return EOF
@@ -379,7 +394,8 @@ cdef class _AioCall(GrpcCallWrapper):
 
     async def initiate_unary_stream(self,
                            bytes request,
-                           tuple outbound_initial_metadata):
+                           tuple outbound_initial_metadata,
+                           object context = None):
         """Implementation of the start of a unary-stream call."""
         # Peer may prematurely end this RPC at any point. We need a corutine
         # that watches if the server sends the final status.
@@ -395,6 +411,8 @@ cdef class _AioCall(GrpcCallWrapper):
         cdef Operation send_close_op = SendCloseFromClientOperation(
             _EMPTY_FLAGS)
 
+        if context is not None:
+            set_instrumentation_context_on_call_aio(self, context)
         outbound_ops = (
             initial_metadata_op,
             send_message_op,
@@ -418,7 +436,8 @@ cdef class _AioCall(GrpcCallWrapper):
 
     async def stream_unary(self,
                            tuple outbound_initial_metadata,
-                           object metadata_sent_observer):
+                           object metadata_sent_observer,
+                           object context = None):
         """Actual implementation of the complete unary-stream call.
 
         Needs to pay extra attention to the raise mechanism. If we want to
@@ -449,6 +468,9 @@ cdef class _AioCall(GrpcCallWrapper):
         cdef tuple inbound_ops
         cdef ReceiveMessageOperation receive_message_op = ReceiveMessageOperation(_EMPTY_FLAGS)
         cdef ReceiveStatusOnClientOperation receive_status_on_client_op = ReceiveStatusOnClientOperation(_EMPTY_FLAGS)
+
+        if context is not None:
+            set_instrumentation_context_on_call_aio(self, context)
         inbound_ops = (receive_message_op, receive_status_on_client_op)
 
         # Executes all operations in one batch.
@@ -473,7 +495,8 @@ cdef class _AioCall(GrpcCallWrapper):
 
     async def initiate_stream_stream(self,
                            tuple outbound_initial_metadata,
-                           object metadata_sent_observer):
+                           object metadata_sent_observer,
+                           object context = None):
         """Actual implementation of the complete stream-stream call.
 
         Needs to pay extra attention to the raise mechanism. If we want to
@@ -483,6 +506,9 @@ cdef class _AioCall(GrpcCallWrapper):
         # Peer may prematurely end this RPC at any point. We need a corutine
         # that watches if the server sends the final status.
         status_task = self._loop.create_task(self._handle_status_once_received())
+
+        if context is not None:
+            set_instrumentation_context_on_call_aio(self, context)
 
         try:
             # Sends out initial_metadata ASAP.

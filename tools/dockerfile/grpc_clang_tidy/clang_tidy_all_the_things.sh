@@ -20,5 +20,10 @@ CLANG_TIDY=${CLANG_TIDY:-clang-tidy}
 
 cd ${CLANG_TIDY_ROOT}
 
-find src/core src/cpp test/core test/cpp ! -path 'src/core/ext/upb-generated/*' -name '*.h' -or -name '*.cc' -print0 \
-  | xargs -0 tools/distrib/run_clang_tidy.py "$@"
+# run clang tidy for all source files
+cat compile_commands.json | jq -r '.[].file' \
+  | grep -E "(^include/|^src/core/|^src/cpp/|^test/core/|^test/cpp/)" \
+  | grep -v -E "src/core/lib/debug/stats_data" \
+  | grep -v -E "/upb-gen/|/upbdefs-gen/" \
+  | sort \
+  | xargs tools/distrib/run_clang_tidy.py "$@"

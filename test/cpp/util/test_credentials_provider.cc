@@ -1,50 +1,53 @@
 
-/*
- *
- * Copyright 2016 gRPC authors.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- *
- */
+//
+//
+// Copyright 2016 gRPC authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+//
 
 #include "test/cpp/util/test_credentials_provider.h"
 
 #include <cstdio>
 #include <fstream>
 #include <iostream>
-
 #include <mutex>
 #include <unordered_map>
 
-#include <gflags/gflags.h>
+#include "absl/flags/flag.h"
+
 #include <grpc/support/log.h>
 #include <grpc/support/sync.h>
 #include <grpcpp/security/server_credentials.h>
 
+#include "src/core/lib/gprpp/crash.h"
 #include "test/core/end2end/data/ssl_test_data.h"
 
-DEFINE_string(tls_cert_file, "", "The TLS cert file used when --use_tls=true");
-DEFINE_string(tls_key_file, "", "The TLS key file used when --use_tls=true");
+ABSL_FLAG(std::string, tls_cert_file, "",
+          "The TLS cert file used when --use_tls=true");
+ABSL_FLAG(std::string, tls_key_file, "",
+          "The TLS key file used when --use_tls=true");
 
 namespace grpc {
 namespace testing {
 namespace {
 
-grpc::string ReadFile(const grpc::string& src_path) {
+std::string ReadFile(const std::string& src_path) {
   std::ifstream src;
   src.open(src_path, std::ifstream::in | std::ifstream::binary);
 
-  grpc::string contents;
+  std::string contents;
   src.seekg(0, std::ios::end);
   contents.reserve(src.tellg());
   src.seekg(0, std::ios::beg);
@@ -56,17 +59,17 @@ grpc::string ReadFile(const grpc::string& src_path) {
 class DefaultCredentialsProvider : public CredentialsProvider {
  public:
   DefaultCredentialsProvider() {
-    if (!FLAGS_tls_key_file.empty()) {
-      custom_server_key_ = ReadFile(FLAGS_tls_key_file);
+    if (!absl::GetFlag(FLAGS_tls_key_file).empty()) {
+      custom_server_key_ = ReadFile(absl::GetFlag(FLAGS_tls_key_file));
     }
-    if (!FLAGS_tls_cert_file.empty()) {
-      custom_server_cert_ = ReadFile(FLAGS_tls_cert_file);
+    if (!absl::GetFlag(FLAGS_tls_cert_file).empty()) {
+      custom_server_cert_ = ReadFile(absl::GetFlag(FLAGS_tls_cert_file));
     }
   }
   ~DefaultCredentialsProvider() override {}
 
   void AddSecureType(
-      const grpc::string& type,
+      const std::string& type,
       std::unique_ptr<CredentialTypeProvider> type_provider) override {
     // This clobbers any existing entry for type, except the defaults, which
     // can't be clobbered.
@@ -83,7 +86,7 @@ class DefaultCredentialsProvider : public CredentialsProvider {
   }
 
   std::shared_ptr<ChannelCredentials> GetChannelCredentials(
-      const grpc::string& type, ChannelArguments* args) override {
+      const std::string& type, ChannelArguments* args) override {
     if (type == grpc::testing::kInsecureCredentialsType) {
       return InsecureChannelCredentials();
     } else if (type == grpc::testing::kAltsCredentialsType) {
@@ -109,7 +112,7 @@ class DefaultCredentialsProvider : public CredentialsProvider {
   }
 
   std::shared_ptr<ServerCredentials> GetServerCredentials(
-      const grpc::string& type) override {
+      const std::string& type) override {
     if (type == grpc::testing::kInsecureCredentialsType) {
       return InsecureServerCredentials();
     } else if (type == grpc::testing::kAltsCredentialsType) {
@@ -140,8 +143,8 @@ class DefaultCredentialsProvider : public CredentialsProvider {
           ->GetServerCredentials();
     }
   }
-  std::vector<grpc::string> GetSecureCredentialsTypeList() override {
-    std::vector<grpc::string> types;
+  std::vector<std::string> GetSecureCredentialsTypeList() override {
+    std::vector<std::string> types;
     types.push_back(grpc::testing::kTlsCredentialsType);
     std::unique_lock<std::mutex> lock(mu_);
     for (auto it = added_secure_type_names_.begin();
@@ -153,11 +156,11 @@ class DefaultCredentialsProvider : public CredentialsProvider {
 
  private:
   std::mutex mu_;
-  std::vector<grpc::string> added_secure_type_names_;
+  std::vector<std::string> added_secure_type_names_;
   std::vector<std::unique_ptr<CredentialTypeProvider>>
       added_secure_type_providers_;
-  grpc::string custom_server_key_;
-  grpc::string custom_server_cert_;
+  std::string custom_server_key_;
+  std::string custom_server_cert_;
 };
 
 CredentialsProvider* g_provider = nullptr;

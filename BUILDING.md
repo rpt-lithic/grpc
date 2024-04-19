@@ -1,8 +1,8 @@
 gRPC C++ - Building from source
 ===========================
 
-This document has detailed instructions on how to build gRPC C++ from source. Note that it only covers the build of gRPC itself and is mostly meant for gRPC C++ contributors and/or power users.
-Other should follow the user instructions. See the [How to use](https://github.com/grpc/grpc/tree/master/src/cpp#to-start-using-grpc-c) instructions for guidance on how to add gRPC as a dependency to a C++ application (there are several ways and system wide installation is often not the best choice).
+This document has detailed instructions on how to build gRPC C++ from source. Note that it only covers the build of gRPC itself and is meant for gRPC C++ contributors and/or power users. 
+Other should follow the user instructions. See the [How to use](https://github.com/grpc/grpc/tree/master/src/cpp#to-start-using-grpc-c) instructions for guidance on how to add gRPC as a dependency to a C++ application (there are several ways and system-wide installation is often not the best choice).
 
 # Pre-requisites
 
@@ -19,10 +19,8 @@ If you plan to build using CMake
 
 If you are a contributor and plan to build and run tests, install the following as well:
 ```sh
- $ # libgflags-dev is only required if building with make (deprecated)
- $ [sudo] apt-get install libgflags-dev
  $ # clang and LLVM C++ lib is only required for sanitizer builds
- $ [sudo] apt-get install clang-5.0 libc++-dev
+ $ [sudo] apt-get install clang libc++-dev
 ```
 
 ## MacOS
@@ -45,12 +43,6 @@ packages from [Homebrew](https://brew.sh):
 
 If you plan to build using CMake, follow the instructions from https://cmake.org/download/
 
-If you are a contributor and plan to build and run tests, install the following as well:
-```sh
- $ # gflags is only required if building with make (deprecated) 
- $ brew install gflags
-```
-
 *Tip*: when building,
 you *may* want to explicitly set the `LIBTOOL` and `LIBTOOLIZE`
 environment variables when running `make` to ensure the version
@@ -63,7 +55,7 @@ installed by `brew` is being used:
 ## Windows
 
 To prepare for cmake + Microsoft Visual C++ compiler build
-- Install Visual Studio 2015 or 2017 (Visual C++ compiler will be used).
+- Install Visual Studio 2019 or later (Visual C++ compiler will be used).
 - Install [Git](https://git-scm.com/).
 - Install [CMake](https://cmake.org/download/).
 - Install [nasm](https://www.nasm.us/) and add it to `PATH` (`choco install nasm`) - *required by boringssl*
@@ -96,14 +88,14 @@ with something else than `bazel` (e.g. `cmake`).
 
 # Build from source
 
-In the C++ world, there's no "standard" build system that would work for in all supported use cases and on all supported platforms.
+In the C++ world, there's no "standard" build system that would work for all supported use cases and on all supported platforms.
 Therefore, gRPC supports several major build systems, which should satisfy most users. Depending on your needs
 we recommend building using `bazel` or `cmake`.
 
 ## Building with bazel (recommended)
 
-Bazel is the primary build system for gRPC C++ and if you're comfortable with using bazel, we can certainly recommend it.
-Using bazel will give you the best developer experience as well as faster and cleaner builds.
+Bazel is the primary build system for gRPC C++. If you're comfortable using bazel, we can certainly recommend it.
+Using bazel will give you the best developer experience in addition to faster and cleaner builds.
 
 You'll need `bazel` version `1.0.0` or higher to build gRPC.
 See [Installing Bazel](https://docs.bazel.build/versions/master/install.html) for instructions how to install bazel on your system.
@@ -120,14 +112,17 @@ $ bazel build :all
 $ bazel test --config=dbg //test/...
 ```
 
-NOTE: If you are gRPC maintainer and you have access to our test cluster, you should use the our [gRPC's Remote Execution environment](tools/remote_build/README.md)
+NOTE: If you're using Bazel 7 or newer and working with gRPC, you'll need to turn off bzlmod.
+This is because gRPC isn't fully compatible with bzlmod yet. To do this, add --enable_bzlmod=false to your Bazel commands.
+
+NOTE: If you are a gRPC maintainer and you have access to our test cluster, you should use our [gRPC's Remote Execution environment](tools/remote_build/README.md)
 to get significant improvement to the build and test speed (and a bunch of other very useful features).
 
 ## Building with CMake
 
 ### Linux/Unix, Using Make
 
-Run from grpc directory after cloning the repo with --recursive or updating submodules.
+Run from the grpc directory after cloning the repo with --recursive or updating submodules.
 ```
 $ mkdir -p cmake/build
 $ cd cmake/build
@@ -137,22 +132,22 @@ $ make
 
 If you want to build shared libraries (`.so` files), run `cmake` with `-DBUILD_SHARED_LIBS=ON`.
 
-### Windows, Using Visual Studio 2015 or 2017
+### Windows, Using Visual Studio 2019 or later
 
 When using the "Visual Studio" generator,
 cmake will generate a solution (`grpc.sln`) that contains a VS project for
-every target defined in `CMakeLists.txt` (+ few extra convenience projects
+every target defined in `CMakeLists.txt` (+ a few extra convenience projects
 added automatically by cmake). After opening the solution with Visual Studio
 you will be able to browse and build the code.
 ```
 > @rem Run from grpc directory after cloning the repo with --recursive or updating submodules.
 > md .build
 > cd .build
-> cmake .. -G "Visual Studio 14 2015"
+> cmake .. -G "Visual Studio 16 2019"
 > cmake --build . --config Release
 ```
 
-If you want to build DLLs, run `cmake` with `-DBUILD_SHARED_LIBS=ON`.
+Using gRPC C++ as a DLL is not recommended, but you can still enable it by running `cmake` with `-DBUILD_SHARED_LIBS=ON`. 
 
 ### Windows, Using Ninja (faster build).
 
@@ -168,7 +163,16 @@ installed to be able to compile the C/C++ sources.
 > cmake --build .
 ```
 
-If you want to build DLLs, run `cmake` with `-DBUILD_SHARED_LIBS=ON`.
+Using gRPC C++ as a DLL is not recommended, but you can still enable it by running `cmake` with `-DBUILD_SHARED_LIBS=ON`.
+
+### Windows: A note on building shared libs (DLLs)
+
+Windows DLL build is supported at a "best effort" basis and we don't recommend using gRPC C++ as a DLL as there are some known drawbacks around how C++ DLLs work on Windows. For example, there is no stable C++ ABI and you can't safely allocate memory in one DLL, and free it in another etc.
+
+That said, we don't actively prohibit building DLLs on windows (it can be enabled in cmake with `-DBUILD_SHARED_LIBS=ON`), and are free to use the DLL builds
+at your own risk.
+- you've been warned that there are some important drawbacks and some things might not work at all or will be broken in interesting ways.
+- we don't have extensive testing for DLL builds in place (to avoid maintenance costs, increased test duration etc.) so regressions / build breakages might occur
 
 ### Dependency management
 
@@ -216,6 +220,7 @@ $ cmake ../.. -DgRPC_INSTALL=ON                \
               -DgRPC_ABSL_PROVIDER=package     \
               -DgRPC_CARES_PROVIDER=package    \
               -DgRPC_PROTOBUF_PROVIDER=package \
+              -DgRPC_RE2_PROVIDER=package      \
               -DgRPC_SSL_PROVIDER=package      \
               -DgRPC_ZLIB_PROVIDER=package
 $ make
@@ -241,7 +246,13 @@ $ cmake ../.. -DCMAKE_TOOLCHAIN_FILE=path/to/file
 $ make
 ```
 
-[Cross-compile example](test/distrib/cpp/run_distrib_test_raspberry_pi.sh)
+[Cross-compile example](test/distrib/cpp/run_distrib_test_cmake_aarch64_cross.sh)
+
+### A note on SONAME and its ABI compatibility implications in the cmake build
+
+Best efforts are made to bump the SONAME revision during ABI breaches. While a
+change in the SONAME clearly indicates an ABI incompatibility, no hard guarantees
+can be made about any sort of ABI stability across the same SONAME version.
 
 ## Building with make on UNIX systems (deprecated)
 
@@ -261,10 +272,10 @@ $ make
 
 ### A note on `protoc`
 
-By default gRPC uses [protocol buffers](https://github.com/google/protobuf),
+By default gRPC uses [protocol buffers](https://github.com/protocolbuffers/protobuf),
 you will need the `protoc` compiler to generate stub server and client code.
 
-If you compile gRPC from source, as described below, the Makefile will
+If you compile gRPC from source, as described above, the Makefile will
 automatically try compiling the `protoc` in third_party if you cloned the
 repository recursively and it detects that you do not already have 'protoc' compiler
 installed.

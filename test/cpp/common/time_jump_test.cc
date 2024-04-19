@@ -1,31 +1,36 @@
-/*
- *
- * Copyright 2019 gRPC authors.
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- *
- */
+//
+//
+// Copyright 2019 gRPC authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//
+//
 
 #include <spawn.h>
+
 #include <sstream>
 #include <string>
 #include <thread>
 #include <vector>
 
-#include <grpc/grpc.h>
-#include <grpc/support/log.h>
 #include <gtest/gtest.h>
 
+#include "absl/time/time.h"
+
+#include <grpc/grpc.h>
+#include <grpc/support/log.h>
+
+#include "src/core/lib/gprpp/crash.h"
 #include "src/core/lib/gprpp/sync.h"
 #include "src/core/lib/iomgr/closure.h"
 #include "src/core/lib/iomgr/error.h"
@@ -70,7 +75,7 @@ class TimeJumpTest : public ::testing::TestWithParam<std::string> {
     // Skip test if slowdown factor > 1
     if (grpc_test_slowdown_factor() == 1) {
       run_cmd("sudo sntp -sS pool.ntp.org");
-      grpc_shutdown_blocking();
+      grpc_shutdown();
     }
   }
 
@@ -86,10 +91,11 @@ INSTANTIATE_TEST_SUITE_P(TimeJump, TimeJumpTest,
 TEST_P(TimeJumpTest, TimerRunning) {
   grpc_core::ExecCtx exec_ctx;
   grpc_timer timer;
-  grpc_timer_init(&timer, grpc_core::ExecCtx::Get()->Now() + 3000,
+  grpc_timer_init(&timer,
+                  grpc_core::Timestamp::Now() + grpc_core::Duration::Seconds(3),
                   GRPC_CLOSURE_CREATE(
-                      [](void*, grpc_error* error) {
-                        GPR_ASSERT(error == GRPC_ERROR_CANCELLED);
+                      [](void*, grpc_error_handle error) {
+                        GPR_ASSERT(error == absl::CancelledError());
                       },
                       nullptr, grpc_schedule_on_exec_ctx));
   gpr_sleep_until(grpc_timeout_milliseconds_to_deadline(100));
@@ -116,8 +122,7 @@ TEST_P(TimeJumpTest, TimedWait) {
       run_cmd(cmd.str().c_str());
     });
     gpr_timespec before = gpr_now(GPR_CLOCK_MONOTONIC);
-    int timedout = cond.Wait(
-        &mu, grpc_millis_to_timespec(kWaitTimeMs, GPR_CLOCK_REALTIME));
+    bool timedout = cond.WaitWithTimeout(&mu, absl::Milliseconds(kWaitTimeMs));
     gpr_timespec after = gpr_now(GPR_CLOCK_MONOTONIC);
     int32_t elapsed_ms = gpr_time_to_millis(gpr_time_sub(after, before));
     gpr_log(GPR_DEBUG, "After wait, timedout = %d elapsed_ms = %d", timedout,
@@ -137,7 +142,7 @@ TEST_P(TimeJumpTest, TimedWait) {
 }
 
 int main(int argc, char** argv) {
-  grpc::testing::TestEnvironment env(argc, argv);
+  grpc::testing::TestEnvironment env(&argc, argv);
   ::testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
 }

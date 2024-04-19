@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+load("//bazel:grpc_build_system.bzl", "grpc_py_binary")
+
 package(
     default_visibility = ["//visibility:public"],
     features = [
@@ -20,9 +22,7 @@ package(
     ],
 )
 
-licenses(["notice"])  # Apache v2
-
-load("//bazel:grpc_build_system.bzl", "grpc_py_binary")
+licenses(["notice"])
 
 grpc_py_binary(
     name = "dns_server",
@@ -32,6 +32,7 @@ grpc_py_binary(
         "twisted",
         "yaml",
     ],
+    python_version = "PY3",
 )
 
 grpc_py_binary(
@@ -41,10 +42,19 @@ grpc_py_binary(
     external_deps = [
         "twisted",
     ],
+    python_version = "PY3",
 )
 
 grpc_py_binary(
     name = "tcp_connect",
     testonly = True,
     srcs = ["tcp_connect.py"],
+    python_version = "PY3",
+)
+
+grpc_py_binary(
+    name = "health_check",
+    testonly = True,
+    srcs = ["health_check.py"],
+    python_version = "PY3",
 )

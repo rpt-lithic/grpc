@@ -20,20 +20,21 @@ import unittest
 import grpc
 from grpc.experimental import aio
 
-from src.proto.grpc.testing import messages_pb2, test_pb2_grpc
+from src.proto.grpc.testing import messages_pb2
+from src.proto.grpc.testing import test_pb2_grpc
 from tests.unit.framework.common import test_constants
-from tests_aio.unit._constants import (UNARY_CALL_WITH_SLEEP_VALUE,
-                                       UNREACHABLE_TARGET)
+from tests_aio.unit._constants import UNARY_CALL_WITH_SLEEP_VALUE
+from tests_aio.unit._constants import UNREACHABLE_TARGET
 from tests_aio.unit._test_base import AioTestBase
 from tests_aio.unit._test_server import start_test_server
 
-_UNARY_CALL_METHOD = '/grpc.testing.TestService/UnaryCall'
-_UNARY_CALL_METHOD_WITH_SLEEP = '/grpc.testing.TestService/UnaryCallWithSleep'
-_STREAMING_OUTPUT_CALL_METHOD = '/grpc.testing.TestService/StreamingOutputCall'
+_UNARY_CALL_METHOD = "/grpc.testing.TestService/UnaryCall"
+_UNARY_CALL_METHOD_WITH_SLEEP = "/grpc.testing.TestService/UnaryCallWithSleep"
+_STREAMING_OUTPUT_CALL_METHOD = "/grpc.testing.TestService/StreamingOutputCall"
 
 _INVOCATION_METADATA = (
-    ('x-grpc-test-echo-initial', 'initial-md-value'),
-    ('x-grpc-test-echo-trailing-bin', b'\x00\x02'),
+    ("x-grpc-test-echo-initial", "initial-md-value"),
+    ("x-grpc-test-echo-trailing-bin", b"\x00\x02"),
 )
 
 _NUM_STREAM_RESPONSES = 5
@@ -42,7 +43,6 @@ _RESPONSE_PAYLOAD_SIZE = 42
 
 
 class TestChannel(AioTestBase):
-
     async def setUp(self):
         self._server_target, self._server = await start_test_server()
 
@@ -54,7 +54,8 @@ class TestChannel(AioTestBase):
             hi = channel.unary_unary(
                 _UNARY_CALL_METHOD,
                 request_serializer=messages_pb2.SimpleRequest.SerializeToString,
-                response_deserializer=messages_pb2.SimpleResponse.FromString)
+                response_deserializer=messages_pb2.SimpleResponse.FromString,
+            )
             await hi(messages_pb2.SimpleRequest())
 
     async def test_unary_unary(self):
@@ -62,7 +63,8 @@ class TestChannel(AioTestBase):
             hi = channel.unary_unary(
                 _UNARY_CALL_METHOD,
                 request_serializer=messages_pb2.SimpleRequest.SerializeToString,
-                response_deserializer=messages_pb2.SimpleResponse.FromString)
+                response_deserializer=messages_pb2.SimpleResponse.FromString,
+            )
             response = await hi(messages_pb2.SimpleRequest())
 
             self.assertIsInstance(response, messages_pb2.SimpleResponse)
@@ -76,20 +78,32 @@ class TestChannel(AioTestBase):
             )
 
             with self.assertRaises(grpc.RpcError) as exception_context:
-                await hi(messages_pb2.SimpleRequest(),
-                         timeout=UNARY_CALL_WITH_SLEEP_VALUE / 2)
+                await hi(
+                    messages_pb2.SimpleRequest(),
+                    timeout=UNARY_CALL_WITH_SLEEP_VALUE / 2,
+                )
 
-            _, details = grpc.StatusCode.DEADLINE_EXCEEDED.value  # pylint: disable=unused-variable
-            self.assertEqual(grpc.StatusCode.DEADLINE_EXCEEDED,
-                             exception_context.exception.code())
-            self.assertEqual(details.title(),
-                             exception_context.exception.details())
+            (
+                _,
+                details,
+            ) = (
+                grpc.StatusCode.DEADLINE_EXCEEDED.value
+            )  # pylint: disable=unused-variable
+            self.assertEqual(
+                grpc.StatusCode.DEADLINE_EXCEEDED,
+                exception_context.exception.code(),
+            )
+            self.assertEqual(
+                details.title(), exception_context.exception.details()
+            )
             self.assertIsNotNone(exception_context.exception.initial_metadata())
             self.assertIsNotNone(
-                exception_context.exception.trailing_metadata())
+                exception_context.exception.trailing_metadata()
+            )
 
-    @unittest.skipIf(os.name == 'nt',
-                     'TODO: https://github.com/grpc/grpc/issues/21658')
+    @unittest.skipIf(
+        os.name == "nt", "TODO: https://github.com/grpc/grpc/issues/21658"
+    )
     async def test_unary_call_does_not_times_out(self):
         async with aio.insecure_channel(self._server_target) as channel:
             hi = channel.unary_unary(
@@ -98,8 +112,10 @@ class TestChannel(AioTestBase):
                 response_deserializer=messages_pb2.SimpleResponse.FromString,
             )
 
-            call = hi(messages_pb2.SimpleRequest(),
-                      timeout=UNARY_CALL_WITH_SLEEP_VALUE * 5)
+            call = hi(
+                messages_pb2.SimpleRequest(),
+                timeout=UNARY_CALL_WITH_SLEEP_VALUE * 5,
+            )
             self.assertEqual(await call.code(), grpc.StatusCode.OK)
 
     async def test_unary_stream(self):
@@ -110,7 +126,8 @@ class TestChannel(AioTestBase):
         request = messages_pb2.StreamingOutputCallRequest()
         for _ in range(_NUM_STREAM_RESPONSES):
             request.response_parameters.append(
-                messages_pb2.ResponseParameters(size=_RESPONSE_PAYLOAD_SIZE))
+                messages_pb2.ResponseParameters(size=_RESPONSE_PAYLOAD_SIZE)
+            )
 
         # Invokes the actual RPC
         call = stub.StreamingOutputCall(request)
@@ -119,8 +136,9 @@ class TestChannel(AioTestBase):
         response_cnt = 0
         async for response in call:
             response_cnt += 1
-            self.assertIs(type(response),
-                          messages_pb2.StreamingOutputCallResponse)
+            self.assertIs(
+                type(response), messages_pb2.StreamingOutputCallResponse
+            )
             self.assertEqual(_RESPONSE_PAYLOAD_SIZE, len(response.payload.body))
 
         self.assertEqual(_NUM_STREAM_RESPONSES, response_cnt)
@@ -135,7 +153,7 @@ class TestChannel(AioTestBase):
         call = stub.StreamingInputCall()
 
         # Prepares the request
-        payload = messages_pb2.Payload(body=b'\0' * _REQUEST_PAYLOAD_SIZE)
+        payload = messages_pb2.Payload(body=b"\0" * _REQUEST_PAYLOAD_SIZE)
         request = messages_pb2.StreamingInputCallRequest(payload=payload)
 
         # Sends out requests
@@ -146,8 +164,10 @@ class TestChannel(AioTestBase):
         # Validates the responses
         response = await call
         self.assertIsInstance(response, messages_pb2.StreamingInputCallResponse)
-        self.assertEqual(_NUM_STREAM_RESPONSES * _REQUEST_PAYLOAD_SIZE,
-                         response.aggregated_payload_size)
+        self.assertEqual(
+            _NUM_STREAM_RESPONSES * _REQUEST_PAYLOAD_SIZE,
+            response.aggregated_payload_size,
+        )
 
         self.assertEqual(await call.code(), grpc.StatusCode.OK)
         await channel.close()
@@ -157,7 +177,7 @@ class TestChannel(AioTestBase):
         stub = test_pb2_grpc.TestServiceStub(channel)
 
         # Prepares the request
-        payload = messages_pb2.Payload(body=b'\0' * _REQUEST_PAYLOAD_SIZE)
+        payload = messages_pb2.Payload(body=b"\0" * _REQUEST_PAYLOAD_SIZE)
         request = messages_pb2.StreamingInputCallRequest(payload=payload)
 
         async def gen():
@@ -170,8 +190,10 @@ class TestChannel(AioTestBase):
         # Validates the responses
         response = await call
         self.assertIsInstance(response, messages_pb2.StreamingInputCallResponse)
-        self.assertEqual(_NUM_STREAM_RESPONSES * _REQUEST_PAYLOAD_SIZE,
-                         response.aggregated_payload_size)
+        self.assertEqual(
+            _NUM_STREAM_RESPONSES * _REQUEST_PAYLOAD_SIZE,
+            response.aggregated_payload_size,
+        )
 
         self.assertEqual(await call.code(), grpc.StatusCode.OK)
         await channel.close()
@@ -186,13 +208,15 @@ class TestChannel(AioTestBase):
         # Prepares the request
         request = messages_pb2.StreamingOutputCallRequest()
         request.response_parameters.append(
-            messages_pb2.ResponseParameters(size=_RESPONSE_PAYLOAD_SIZE))
+            messages_pb2.ResponseParameters(size=_RESPONSE_PAYLOAD_SIZE)
+        )
 
         for _ in range(_NUM_STREAM_RESPONSES):
             await call.write(request)
             response = await call.read()
-            self.assertIsInstance(response,
-                                  messages_pb2.StreamingOutputCallResponse)
+            self.assertIsInstance(
+                response, messages_pb2.StreamingOutputCallResponse
+            )
             self.assertEqual(_RESPONSE_PAYLOAD_SIZE, len(response.payload.body))
 
         await call.done_writing()
@@ -207,7 +231,8 @@ class TestChannel(AioTestBase):
         # Prepares the request
         request = messages_pb2.StreamingOutputCallRequest()
         request.response_parameters.append(
-            messages_pb2.ResponseParameters(size=_RESPONSE_PAYLOAD_SIZE))
+            messages_pb2.ResponseParameters(size=_RESPONSE_PAYLOAD_SIZE)
+        )
 
         async def gen():
             for _ in range(_NUM_STREAM_RESPONSES):
@@ -217,14 +242,15 @@ class TestChannel(AioTestBase):
         call = stub.FullDuplexCall(gen())
 
         async for response in call:
-            self.assertIsInstance(response,
-                                  messages_pb2.StreamingOutputCallResponse)
+            self.assertIsInstance(
+                response, messages_pb2.StreamingOutputCallResponse
+            )
             self.assertEqual(_RESPONSE_PAYLOAD_SIZE, len(response.payload.body))
 
         self.assertEqual(grpc.StatusCode.OK, await call.code())
         await channel.close()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     logging.basicConfig(level=logging.DEBUG)
     unittest.main(verbosity=2)

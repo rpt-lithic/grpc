@@ -12,9 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-licenses(["notice"])  # Apache v2
-
 load("//bazel:grpc_build_system.bzl", "grpc_cc_binary", "grpc_cc_library", "grpc_cc_test", "grpc_package")
+
+licenses(["notice"])
 
 grpc_package(
     name = "test/cpp/util",
@@ -30,7 +30,7 @@ grpc_cc_library(
         "test_config.h",
     ],
     external_deps = [
-        "gflags",
+        "absl/flags:parse",
     ],
     deps = [
         "//:gpr",
@@ -60,6 +60,7 @@ GRPCXX_TESTUTIL_SRCS = [
 
 GRPCXX_TESTUTIL_HDRS = [
     "byte_buffer_proto_helper.h",
+    "credentials.h",
     "string_ref_helper.h",
     "subprocess.h",
 ]
@@ -75,13 +76,15 @@ grpc_cc_library(
         "test_credentials_provider.h",
     ],
     external_deps = [
-        "gflags",
+        "absl/flags:flag",
         "protobuf",
     ],
     deps = [
         "//:grpc++",
+        "//:subprocess",
         "//test/core/end2end:ssl_test_data",
         "//test/core/util:grpc_test_util",
+        "//test/core/util:grpc_test_util_base",
     ],
 )
 
@@ -113,6 +116,8 @@ grpc_cc_library(
     ],
     deps = [
         "//:grpc++_unsecure",
+        "//:subprocess",
+        "//test/core/util:grpc_test_util_base",
         "//test/core/util:grpc_test_util_unsecure",
     ],
 )
@@ -133,7 +138,7 @@ grpc_cc_library(
         "service_describer.h",
     ],
     external_deps = [
-        "gflags",
+        "absl/flags:flag",
         "protobuf",
         "protobuf_clib",
     ],
@@ -153,7 +158,7 @@ grpc_cc_library(
         "grpc_tool.h",
     ],
     external_deps = [
-        "gflags",
+        "absl/flags:flag",
     ],
     deps = [
         ":grpc_cli_utils",
@@ -186,11 +191,14 @@ grpc_cc_test(
         "//src/proto/grpc/testing:echo.proto",
         "//src/proto/grpc/testing:echo_messages.proto",
         "//src/proto/grpc/testing:simple_messages.proto",
+        "//src/proto/grpc/testing/xds/v3:orca_load_report.proto",
     ],
     external_deps = [
+        "absl/flags:flag",
         "gtest",
     ],
     tags = [
+        "no_mac",
         "no_test_ios",
         "no_windows",
         "nomsan",  # death tests seem to be incompatible with msan
@@ -202,7 +210,9 @@ grpc_cc_test(
         "//src/proto/grpc/testing:echo_messages_proto",
         "//src/proto/grpc/testing:echo_proto",
         "//src/proto/grpc/testing:simple_messages_proto",
+        "//src/proto/grpc/testing/xds/v3:orca_load_report_proto",
         "//test/core/util:grpc_test_util",
+        "//test/cpp/util:test_config",
     ],
 )
 
@@ -214,6 +224,7 @@ grpc_cc_test(
     external_deps = [
         "gtest",
     ],
+    uses_event_engine = False,
     uses_polling = False,
     deps = [
         ":test_util",
@@ -228,6 +239,7 @@ grpc_cc_test(
     external_deps = [
         "gtest",
     ],
+    uses_event_engine = False,
     uses_polling = False,
     deps = [
         ":test_util",
@@ -242,6 +254,7 @@ grpc_cc_test(
     external_deps = [
         "gtest",
     ],
+    uses_event_engine = False,
     uses_polling = False,
     deps = [
         "//:grpc++",
@@ -257,6 +270,7 @@ grpc_cc_test(
     external_deps = [
         "gtest",
     ],
+    uses_event_engine = False,
     uses_polling = False,
     deps = [
         ":test_util",
@@ -287,8 +301,10 @@ grpc_cc_test(
     external_deps = [
         "gtest",
     ],
+    tags = ["no_test_ios"],
     deps = [
         "//:grpc++_error_details",
+        "//src/proto/grpc/status:status_proto",
         "//src/proto/grpc/testing:echo_messages_proto",
         "//test/core/util:grpc_test_util",
     ],
@@ -300,7 +316,10 @@ grpc_cc_binary(
         "grpc_cli.cc",
     ],
     external_deps = [
-        "gflags",
+        "absl/flags:flag",
+    ],
+    visibility = [
+        "@grpc:cli",
     ],
     deps = [
         ":grpc++_proto_reflection_desc_db",
@@ -308,5 +327,118 @@ grpc_cc_binary(
         ":test_config",
         "//:grpc++",
         "//src/proto/grpc/reflection/v1alpha:reflection_proto",
+    ],
+)
+
+grpc_cc_binary(
+    name = "channelz_sampler",
+    srcs = ["channelz_sampler.cc"],
+    external_deps = [
+        "absl/flags:flag",
+        "absl/strings",
+    ],
+    language = "c++",
+    tags = [
+        "no_windows",  # unistd.h
+    ],
+    deps = [
+        "//:gpr",
+        "//:grpc++",
+        "//:grpcpp_channelz",
+        "//src/proto/grpc/channelz:channelz_proto",
+        "//test/cpp/util:test_config",
+        "//test/cpp/util:test_util",
+    ],
+)
+
+grpc_cc_test(
+    name = "channelz_sampler_test",
+    srcs = [
+        "channelz_sampler_test.cc",
+    ],
+    data = [
+        ":channelz_sampler",
+    ],
+    external_deps = [
+        "gtest",
+    ],
+    flaky = True,
+    tags = [
+        "no_mac",  # cmake does not build channelz_sampler in Basic Tests C/C++ MacOS test
+        "no_test_android",  # android_cc_test doesn't work with data dependency.
+        "no_test_ios",
+        "no_windows",  # unistd.h
+    ],
+    deps = [
+        "//:gpr",
+        "//:grpc",
+        "//:grpc++",
+        "//:grpcpp_channelz",
+        "//src/proto/grpc/channelz:channelz_proto",
+        "//src/proto/grpc/testing:test_proto",
+        "//test/core/util:grpc_test_util",
+        "//test/cpp/util:test_util",
+    ],
+)
+
+grpc_cc_library(
+    name = "tls_test_utils",
+    srcs = [
+        "tls_test_utils.cc",
+    ],
+    hdrs = [
+        "tls_test_utils.h",
+    ],
+    deps = [
+        "//:gpr",
+        "//:grpc",
+        "//:grpc++",
+        "//test/core/util:grpc_test_util",
+    ],
+)
+
+grpc_cc_test(
+    name = "proto_buffer_reader_test",
+    srcs = [
+        "proto_buffer_reader_test.cc",
+    ],
+    external_deps = [
+        "gtest",
+    ],
+    uses_event_engine = False,
+    uses_polling = False,
+    deps = [
+        ":test_util",
+    ],
+)
+
+grpc_cc_test(
+    name = "proto_buffer_writer_test",
+    srcs = [
+        "proto_buffer_writer_test.cc",
+    ],
+    external_deps = [
+        "gtest",
+    ],
+    uses_event_engine = False,
+    uses_polling = False,
+    deps = [
+        ":test_util",
+    ],
+)
+
+grpc_cc_library(
+    name = "get_grpc_test_runfile_dir",
+    srcs = [
+        "get_grpc_test_runfile_dir.cc",
+    ],
+    hdrs = [
+        "get_grpc_test_runfile_dir.h",
+    ],
+    external_deps = [
+        "absl/types:optional",
+    ],
+    deps = [
+        "//src/core:env",
     ],
 )

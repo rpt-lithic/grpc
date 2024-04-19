@@ -70,7 +70,7 @@ class CallInvokerClient extends Grpc\BaseStub
     $options = []
   ) {
     return $this->_simpleRequest(
-      '/dummy_method',
+      '/phony_method',
       $argument,
       [],
       $metadata,
@@ -159,16 +159,19 @@ class CallInvokerChangeRequestCall
     }
 }
 
-class CallInvokerTest extends PHPUnit_Framework_TestCase
+class CallInvokerTest extends \PHPUnit\Framework\TestCase
 {
-    public function setUp()
+    private $server;
+    private $port;
+
+    public function setUp(): void
     {
         $this->server = new Grpc\Server([]);
         $this->port = $this->server->addHttp2Port('0.0.0.0:0');
         $this->server->start();
     }
 
-    public function tearDown()
+    public function tearDown(): void
     {
         unset($this->server);
     }
@@ -176,11 +179,13 @@ class CallInvokerTest extends PHPUnit_Framework_TestCase
     public function testCreateDefaultCallInvoker()
     {
         $call_invoker = new \Grpc\DefaultCallInvoker();
+        $this->assertNotNull($call_invoker);
     }
 
     public function testCreateCallInvoker()
     {
         $call_invoker = new CallInvokerUpdateChannel();
+        $this->assertNotNull($call_invoker);
     }
 
     public function testCallInvokerAccessChannel()
@@ -189,7 +194,7 @@ class CallInvokerTest extends PHPUnit_Framework_TestCase
         $stub = new \Grpc\BaseStub('localhost:50051',
           ['credentials' => \Grpc\ChannelCredentials::createInsecure(),
             'grpc_call_invoker' => $call_invoker]);
-        $this->assertEquals($call_invoker->getChannel()->getTarget(), 'localhost:50050');
+        $this->assertEquals($call_invoker->getChannel()->getTarget(), 'dns:///localhost:50050');
         $call_invoker->getChannel()->close();
     }
 
@@ -207,8 +212,12 @@ class CallInvokerTest extends PHPUnit_Framework_TestCase
         $unary_call = $client->UnaryCall($req);
 
         $event = $this->server->requestCall();
-        $this->assertSame('/dummy_method', $event->method);
+        $this->assertSame('/phony_method', $event->method);
         $server_call = $event->call;
+        $event = $server_call->startBatch([
+            Grpc\OP_RECV_MESSAGE => true,
+        ]);
+        $this->assertSame('intercepted_unary_request', $event->message);
         $event = $server_call->startBatch([
             Grpc\OP_SEND_INITIAL_METADATA => [],
             Grpc\OP_SEND_STATUS_FROM_SERVER => [
@@ -216,10 +225,8 @@ class CallInvokerTest extends PHPUnit_Framework_TestCase
                 'code' => Grpc\STATUS_OK,
                 'details' => '',
             ],
-            Grpc\OP_RECV_MESSAGE => true,
             Grpc\OP_RECV_CLOSE_ON_SERVER => true,
         ]);
-        $this->assertSame('intercepted_unary_request', $event->message);
         $call_invoker->getChannel()->close();
         unset($unary_call);
         unset($server_call);

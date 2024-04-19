@@ -126,7 +126,7 @@ namespace Grpc.Tools
                                                         "javanano", "js", "objc",
                                                         "php", "python", "ruby" };
 
-        static readonly TimeSpan s_regexTimeout = TimeSpan.FromMilliseconds(100);
+        static readonly TimeSpan s_regexTimeout = TimeSpan.FromSeconds(1);
 
         static readonly List<ErrorListFilter> s_errorListFilters = new List<ErrorListFilter>()
         {
@@ -206,6 +206,63 @@ namespace Grpc.Tools
                 }
             },
 
+            // Example warning from plugins that use GOOGLE_LOG
+            // [libprotobuf WARNING T:\altsrc\..\csharp_enum.cc:74] Duplicate enum value Work (originally Work) in PhoneType; adding underscore to distinguish
+            new ErrorListFilter
+            {
+                Pattern = new Regex(
+                    pattern: "^\\[.+? WARNING (?'FILENAME'.+?):(?'LINE'\\d+?)\\] ?(?'TEXT'.*)",
+                    options: RegexOptions.Compiled | RegexOptions.IgnoreCase,
+                    matchTimeout: s_regexTimeout),
+                LogAction = (log, match) =>
+                {
+                    // The filename and line logged by the plugins may not be useful to the
+                    // end user as they are not the location in the proto file but rather
+                    // in the source code for the plugin. Log them anyway as they may help in
+                    // diagnostics.
+                    int.TryParse(match.Groups["LINE"].Value, out var line);
+                    log.LogWarning(
+                        subcategory: null,
+                        warningCode: null,
+                        helpKeyword: null,
+                        file: match.Groups["FILENAME"].Value,
+                        lineNumber: line,
+                        columnNumber: 0,
+                        endLineNumber: 0,
+                        endColumnNumber: 0,
+                        message: match.Groups["TEXT"].Value);
+                }
+            },
+
+            // Example error from plugins that use GOOGLE_LOG
+            // [libprotobuf ERROR T:\path\...\filename:23] Some message
+            // [libprotobuf FATAL T:\path\...\filename:23] Some message
+            new ErrorListFilter
+            {
+                Pattern = new Regex(
+                    pattern: "^\\[.+? (?'LEVEL'ERROR|FATAL) (?'FILENAME'.+?):(?'LINE'\\d+?)\\] ?(?'TEXT'.*)",
+                    options: RegexOptions.Compiled | RegexOptions.IgnoreCase,
+                    matchTimeout: s_regexTimeout),
+                LogAction = (log, match) =>
+                {
+                    // The filename and line logged by the plugins may not be useful to the
+                    // end user as they are not the location in the proto file but rather
+                    // in the source code for the plugin. Log them anyway as they may help in
+                    // diagnostics.
+                    int.TryParse(match.Groups["LINE"].Value, out var line);
+                    log.LogError(
+                        subcategory: null,
+                        errorCode: null,
+                        helpKeyword: null,
+                        file: match.Groups["FILENAME"].Value,
+                        lineNumber: line,
+                        columnNumber: 0,
+                        endLineNumber: 0,
+                        endColumnNumber: 0,
+                        message: match.Groups["LEVEL"].Value + " " + match.Groups["TEXT"].Value);
+                }
+            },
+
             // Example error without location
             //../Protos/greet.proto: Import "google/protobuf/empty.proto" was listed twice.
             new ErrorListFilter
@@ -267,16 +324,22 @@ namespace Grpc.Tools
 
         /// <summary>
         /// Generated code directory. The generator property determines the language.
-        /// Switch: --GEN-out= (for different generators GEN).
+        /// Switch: --GEN_out= (for different generators GEN, e.g. --csharp_out).
         /// </summary>
         [Required]
         public string OutputDir { get; set; }
 
         /// <summary>
         /// Codegen options. See also OptionsFromMetadata.
-        /// Switch: --GEN_out= (for different generators GEN).
+        /// Switch: --GEN_opt= (for different generators GEN, e.g. --csharp_opt).
         /// </summary>
         public string[] OutputOptions { get; set; }
+
+        /// <summary>
+        /// Additional arguments that will be passed unmodified to protoc (and before any file names).
+        /// For example, "--experimental_allow_proto3_optional"
+        /// </summary>
+        public string[] AdditionalProtocArguments { get; set; }
 
         /// <summary>
         /// Full path to the gRPC plugin executable. If specified, gRPC generation
@@ -348,7 +411,7 @@ namespace Grpc.Tools
             {
                 Log.LogError("Proto compiler currently allows only one input when " +
                              "--dependency_out is specified (via ProtoDepDir or DependencyOut). " +
-                             "Tracking issue: https://github.com/google/protobuf/pull/3959");
+                             "Tracking issue: https://github.com/protocolbuffers/protobuf/pull/3959");
             }
 
             // Use ProtoDepDir to autogenerate DependencyOut
@@ -422,10 +485,21 @@ namespace Grpc.Tools
             if (ProtoPath != null)
             {
                 foreach (string path in ProtoPath)
+                {
                     cmd.AddSwitchMaybe("proto_path", TrimEndSlash(path));
+                }
             }
             cmd.AddSwitchMaybe("dependency_out", DependencyOut);
             cmd.AddSwitchMaybe("error_format", "msvs");
+
+            if (AdditionalProtocArguments != null)
+            {
+                foreach (var additionalProtocOption in AdditionalProtocArguments)
+                {
+                    cmd.AddArg(additionalProtocOption);
+                }
+            }
+
             foreach (var proto in Protobuf)
             {
                 cmd.AddArg(proto.ItemSpec);
@@ -517,12 +591,18 @@ namespace Grpc.Tools
         {
             foreach (ErrorListFilter filter in s_errorListFilters)
             {
-                Match match = filter.Pattern.Match(singleLine);
-
-                if (match.Success)
+                try
                 {
-                    filter.LogAction(Log, match);
-                    return;
+                    Match match = filter.Pattern.Match(singleLine);
+
+                    if (match.Success)
+                    {
+                        filter.LogAction(Log, match);
+                        return;
+                    }
+                } catch (RegexMatchTimeoutException)
+                {
+                    Log.LogWarning("Unable to parse output from protoc. Regex timeout.");
                 }
             }
 

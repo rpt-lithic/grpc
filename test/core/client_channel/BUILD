@@ -12,59 +12,39 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("//bazel:grpc_build_system.bzl", "grpc_cc_binary", "grpc_cc_library", "grpc_cc_test", "grpc_package")
+load("//bazel:grpc_build_system.bzl", "grpc_cc_test", "grpc_package")
 
 grpc_package(name = "test/core/client_channel")
 
-licenses(["notice"])  # Apache v2
+licenses(["notice"])
 
-load("//test/core/util:grpc_fuzzer.bzl", "grpc_fuzzer")
-
-grpc_fuzzer(
-    name = "uri_fuzzer_test",
-    srcs = ["uri_fuzzer_test.cc"],
-    corpus = "uri_corpus",
+grpc_cc_test(
+    name = "client_channel_test",
+    srcs = ["client_channel_test.cc"],
+    external_deps = ["gtest"],
     language = "C++",
-    tags = ["no_windows"],
+    uses_event_engine = False,
+    uses_polling = False,
     deps = [
-        "//:gpr",
-        "//:grpc",
+        "//:grpc_client_channel",
+        "//src/core:channel_args",
+        "//src/core:subchannel_pool_interface",
         "//test/core/util:grpc_test_util",
     ],
 )
 
 grpc_cc_test(
-    name = "parse_address_test",
-    srcs = ["parse_address_test.cc"],
+    name = "http_proxy_mapper_test",
+    srcs = ["http_proxy_mapper_test.cc"],
+    external_deps = ["gtest"],
     language = "C++",
-    deps = [
-        "//:gpr",
-        "//:grpc",
-        "//test/core/util:grpc_test_util",
-    ],
-)
-
-grpc_cc_test(
-    name = "parse_address_with_named_scope_id_test",
-    srcs = ["parse_address_with_named_scope_id_test.cc"],
-    language = "C++",
-    tags = ["no_windows"],
     uses_polling = False,
     deps = [
         "//:gpr",
         "//:grpc",
+        "//src/core:channel_args",
         "//test/core/util:grpc_test_util",
-    ],
-)
-
-grpc_cc_test(
-    name = "uri_parser_test",
-    srcs = ["uri_parser_test.cc"],
-    language = "C++",
-    deps = [
-        "//:gpr",
-        "//:grpc",
-        "//test/core/util:grpc_test_util",
+        "//test/core/util:scoped_env_var",
     ],
 )
 
@@ -75,6 +55,7 @@ grpc_cc_test(
         "gtest",
     ],
     language = "C++",
+    uses_event_engine = False,
     uses_polling = False,
     deps = [
         "//:gpr",
@@ -84,29 +65,35 @@ grpc_cc_test(
 )
 
 grpc_cc_test(
-    name = "service_config_test",
-    srcs = ["service_config_test.cc"],
+    name = "client_channel_service_config_test",
+    srcs = ["client_channel_service_config_test.cc"],
     external_deps = [
         "gtest",
     ],
     language = "C++",
+    uses_event_engine = False,
+    uses_polling = False,
     deps = [
         "//:gpr",
         "//:grpc",
+        "//src/core:channel_args",
         "//test/core/util:grpc_test_util",
     ],
 )
 
 grpc_cc_test(
-    name = "xds_bootstrap_test",
-    srcs = ["xds_bootstrap_test.cc"],
+    name = "retry_service_config_test",
+    srcs = ["retry_service_config_test.cc"],
     external_deps = [
         "gtest",
     ],
     language = "C++",
+    uses_event_engine = False,
+    uses_polling = False,
     deps = [
         "//:gpr",
         "//:grpc",
+        "//src/core:channel_args",
         "//test/core/util:grpc_test_util",
     ],
 )
